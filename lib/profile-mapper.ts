@@ -24,6 +24,37 @@ export type ProfileRow = {
   is_complete: boolean;
 };
 
+export function createEmptyProfile(id: string, email: string): Profile {
+  return {
+    id,
+    fullName: "",
+    email,
+    phone: "",
+    location: "",
+    linkedinUrl: "",
+    portfolioUrl: "",
+    workAuthorization: "",
+    currentTitle: "",
+    experienceLevel: "",
+    yearsExperience: "",
+    skills: [],
+    industries: [],
+    workExperience: [],
+    education: {
+      highestDegree: "",
+      fieldOfStudy: "",
+      institutionName: "",
+      graduationYear: "",
+    },
+    jobTitlesSeeking: [],
+    remotePreference: "",
+    salaryExpectation: "",
+    preferredLocations: [],
+    resumePdfUrl: null,
+    isComplete: false,
+  };
+}
+
 export function mapRowToProfile(row: ProfileRow): Profile {
   return {
     id: row.id,
@@ -40,11 +71,16 @@ export function mapRowToProfile(row: ProfileRow): Profile {
     skills: row.skills ?? [],
     industries: row.industries ?? [],
     workExperience: row.work_experience ?? [],
-    education: row.education ?? { highestDegree: "", fieldOfStudy: "", institutionName: "", graduationYear: "" },
-    jobTitlesSeeking: (row.job_titles_seeking ?? []).join(", "),
+    education: row.education ?? {
+      highestDegree: "",
+      fieldOfStudy: "",
+      institutionName: "",
+      graduationYear: "",
+    },
+    jobTitlesSeeking: row.job_titles_seeking ?? [],
     remotePreference: row.remote_preference ?? "",
     salaryExpectation: row.salary_expectation ?? "",
-    preferredLocations: (row.preferred_locations ?? []).join(", "),
+    preferredLocations: row.preferred_locations ?? [],
     resumePdfUrl: row.resume_pdf_url,
     isComplete: row.is_complete,
   };

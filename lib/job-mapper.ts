@@ -1,4 +1,4 @@
-import type { Job, JobSource } from "@/types";
+import type { CompanyDossier, Job, JobSource } from "@/types";
 
 export type JobRow = {
   id: string;
@@ -16,6 +16,7 @@ export type JobRow = {
   match_reason: string | null;
   matched_skills: string[] | null;
   missing_skills: string[] | null;
+  company_research: CompanyDossier | null;
   found_at: string;
 };
 
@@ -36,6 +37,7 @@ export function mapRowToJob(row: JobRow): Job {
     matchReason: row.match_reason ?? "",
     matchedSkills: row.matched_skills ?? [],
     missingSkills: row.missing_skills ?? [],
+    companyResearch: row.company_research ?? null,
     foundAt: row.found_at,
   };
 }

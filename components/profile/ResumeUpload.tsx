@@ -18,9 +18,13 @@ export function ResumeUpload({ resumePdfUrl, onExtracted }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
-  const [extractStatus, setExtractStatus] = useState<ExtractStatus | null>(null);
+  const [extractStatus, setExtractStatus] = useState<ExtractStatus | null>(
+    null,
+  );
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generateStatus, setGenerateStatus] = useState<ExtractStatus | null>(null);
+  const [generateStatus, setGenerateStatus] = useState<ExtractStatus | null>(
+    null,
+  );
   // /api/resume/generate isn't a Server Action, so its DB write doesn't trigger the
   // automatic page refresh that uploadResume() gets — track the fresh signed URL locally,
   // falling back to the server-provided prop for the upload path and on next page load.
@@ -44,15 +48,25 @@ export function ResumeUpload({ resumePdfUrl, onExtracted }: Props) {
     setGenerateStatus(null);
     try {
       const response = await fetch("/api/resume/generate", { method: "POST" });
-      const result: { success: boolean; url?: string; error?: string } = await response.json();
+      const result: { success: boolean; url?: string; error?: string } =
+        await response.json();
       if (!result.success || !result.url) {
-        setGenerateStatus({ type: "error", message: result.error ?? "Failed to generate resume." });
+        setGenerateStatus({
+          type: "error",
+          message: result.error ?? "Failed to generate resume.",
+        });
         return;
       }
       setGeneratedUrl(result.url);
-      setGenerateStatus({ type: "success", message: "Resume generated from your profile." });
+      setGenerateStatus({
+        type: "success",
+        message: "Resume generated from your profile.",
+      });
     } catch {
-      setGenerateStatus({ type: "error", message: "Failed to generate resume." });
+      setGenerateStatus({
+        type: "error",
+        message: "Failed to generate resume.",
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -63,15 +77,28 @@ export function ResumeUpload({ resumePdfUrl, onExtracted }: Props) {
     setExtractStatus(null);
     try {
       const response = await fetch("/api/resume/extract", { method: "POST" });
-      const result: { success: boolean; data?: Partial<Profile>; error?: string } = await response.json();
+      const result: {
+        success: boolean;
+        data?: Partial<Profile>;
+        error?: string;
+      } = await response.json();
       if (!result.success || !result.data) {
-        setExtractStatus({ type: "error", message: result.error ?? "Failed to extract resume details." });
+        setExtractStatus({
+          type: "error",
+          message: result.error ?? "Failed to extract resume details.",
+        });
         return;
       }
       onExtracted(result.data);
-      setExtractStatus({ type: "success", message: "Profile fields updated below. Review and save." });
+      setExtractStatus({
+        type: "success",
+        message: "Profile fields updated below. Review and save.",
+      });
     } catch {
-      setExtractStatus({ type: "error", message: "Failed to extract resume details." });
+      setExtractStatus({
+        type: "error",
+        message: "Failed to extract resume details.",
+      });
     } finally {
       setIsExtracting(false);
     }
@@ -81,8 +108,8 @@ export function ResumeUpload({ resumePdfUrl, onExtracted }: Props) {
     <div className="rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]">
       <h2 className="text-base font-semibold text-text-primary">Resume</h2>
       <p className="mt-1 text-sm text-text-secondary">
-        Upload an existing resume to auto-fill the profile, or generate a new tailored one from
-        your details below.
+        Upload an existing resume to auto-fill the profile, or generate a new
+        tailored one from your details below.
       </p>
 
       <div
@@ -106,7 +133,9 @@ export function ResumeUpload({ resumePdfUrl, onExtracted }: Props) {
         <p className="text-sm font-medium text-text-primary">
           {isPending ? "Uploading..." : "Click to upload or drag and drop"}
         </p>
-        <p className="text-xs text-text-muted">PDF formatting only. Maximum file size 5MB.</p>
+        <p className="text-xs text-text-muted">
+          PDF formatting only. Maximum file size 5MB.
+        </p>
         <label className="mt-2 cursor-pointer rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary hover:bg-surface-secondary">
           Select Resume
           <input
@@ -114,7 +143,10 @@ export function ResumeUpload({ resumePdfUrl, onExtracted }: Props) {
             accept="application/pdf"
             className="hidden"
             disabled={isPending}
-            onChange={(e) => handleFile(e.target.files?.[0])}
+            onChange={(e) => {
+              handleFile(e.target.files?.[0]);
+              e.currentTarget.value = "";
+            }}
           />
         </label>
         {viewUrl && !isPending && (
@@ -142,7 +174,9 @@ export function ResumeUpload({ resumePdfUrl, onExtracted }: Props) {
 
       {viewUrl && (
         <div className="mt-4 flex items-center justify-between gap-4">
-          <p className="text-sm text-text-secondary">Let AI fill in the form below from this resume.</p>
+          <p className="text-sm text-text-secondary">
+            Let AI fill in the form below from this resume.
+          </p>
           <button
             type="button"
             disabled={isExtracting}
@@ -155,7 +189,9 @@ export function ResumeUpload({ resumePdfUrl, onExtracted }: Props) {
         </div>
       )}
       {extractStatus && (
-        <p className={`mt-2 text-xs ${extractStatus.type === "success" ? "text-success" : "text-error"}`}>
+        <p
+          className={`mt-2 text-xs ${extractStatus.type === "success" ? "text-success" : "text-error"}`}
+        >
           {extractStatus.message}
         </p>
       )}
@@ -174,7 +210,9 @@ export function ResumeUpload({ resumePdfUrl, onExtracted }: Props) {
         </button>
       </div>
       {generateStatus && (
-        <p className={`mt-2 text-xs ${generateStatus.type === "success" ? "text-success" : "text-error"}`}>
+        <p
+          className={`mt-2 text-xs ${generateStatus.type === "success" ? "text-success" : "text-error"}`}
+        >
           {generateStatus.message}
         </p>
       )}

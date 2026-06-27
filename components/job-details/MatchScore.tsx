@@ -14,9 +14,13 @@ export function MatchScore({ job }: Props) {
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-success-lightest">
             <Sparkles className="size-4 text-success" />
           </span>
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-secondary">AI Match Reasoning</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+            AI Match Reasoning
+          </h2>
         </div>
-        <p className="text-sm leading-relaxed text-text-primary">{job.matchReason}</p>
+        <p className="text-sm leading-relaxed text-text-primary">
+          {job.matchReason}
+        </p>
       </div>
 
       <div className="rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]">
@@ -56,6 +60,12 @@ export function MatchScore({ job }: Props) {
               ))}
             </div>
           </div>
+        )}
+
+        {job.matchedSkills.length === 0 && job.missingSkills.length === 0 && (
+          <p className="text-sm text-text-muted">
+            No skill match data is available for this job yet.
+          </p>
         )}
       </div>
     </div>

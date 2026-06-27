@@ -54,6 +54,10 @@ type CallWithFallbackParams<T> = {
   schema: ZodType<T>;
   temperature: number;
   maxTokens: number;
+  // Overrides PROVIDER_TIMEOUT_MS for this call — callers with a larger prompt than the
+  // 20s default was tuned for (e.g. company research's browser-extracted page content)
+  // can give providers more room before moving to the next one in the fallback chain.
+  timeoutMs?: number;
 };
 
 type CallWithFallbackResult<T> = { success: true; data: T } | { success: false; error: string };
@@ -100,7 +104,7 @@ async function callProvider<T>(
   const client = new OpenAI({
     apiKey,
     baseURL: provider.baseURL,
-    timeout: PROVIDER_TIMEOUT_MS,
+    timeout: params.timeoutMs ?? PROVIDER_TIMEOUT_MS,
     maxRetries: 0,
   });
 

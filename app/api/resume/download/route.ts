@@ -9,14 +9,30 @@ export async function GET() {
       data: { user },
     } = await insforge.auth.getCurrentUser();
     if (!user) {
-      return NextResponse.json({ success: false, error: "You must be signed in to download your resume." }, { status: 401 });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "You must be signed in to download your resume.",
+        },
+        { status: 401 },
+      );
     }
 
-    const path = `${user.id}/resume.pdf`;
-    const { data: blob, error } = await insforge.storage.from("resumes").download(path);
+    const { data: profile } = await insforge.database
+      .from("profiles")
+      .select("resume_pdf_url")
+      .eq("id", user.id)
+      .single();
+    const path = profile?.resume_pdf_url ?? `${user.id}/resume.pdf`;
+    const { data: blob, error } = await insforge.storage
+      .from("resumes")
+      .download(path);
     if (error || !blob) {
       console.error("[api/resume/download]", error);
-      return NextResponse.json({ success: false, error: "No resume found to download." }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: "No resume found to download." },
+        { status: 404 },
+      );
     }
 
     // Setting Content-Disposition here (rather than relying on the browser's `download`
@@ -29,10 +45,15 @@ export async function GET() {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": 'attachment; filename="resume.pdf"',
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {
     console.error("[api/resume/download]", error);
-    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

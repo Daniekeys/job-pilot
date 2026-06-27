@@ -10,21 +10,19 @@ import type { Profile } from "@/types";
 const RESUME_MAX_SIZE_BYTES = 5 * 1024 * 1024;
 const RESUME_VIEW_URL_TTL_SECONDS = 60 * 60 * 24;
 
-function splitToArray(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => item !== "");
-}
-
-export async function saveProfile(profile: Profile): Promise<{ success: boolean; error?: string }> {
+export async function saveProfile(
+  profile: Profile,
+): Promise<{ success: boolean; error?: string }> {
   try {
     const insforge = await createInsforgeServer();
     const {
       data: { user },
     } = await insforge.auth.getCurrentUser();
     if (!user) {
-      return { success: false, error: "You must be signed in to save your profile." };
+      return {
+        success: false,
+        error: "You must be signed in to save your profile.",
+      };
     }
 
     const { data: existing, error: fetchError } = await insforge.database
@@ -50,15 +48,16 @@ export async function saveProfile(profile: Profile): Promise<{ success: boolean;
         work_authorization: profile.workAuthorization || null,
         current_title: profile.currentTitle,
         experience_level: profile.experienceLevel || null,
-        years_experience: profile.yearsExperience === "" ? null : profile.yearsExperience,
+        years_experience:
+          profile.yearsExperience === "" ? null : profile.yearsExperience,
         skills: profile.skills,
         industries: profile.industries,
         work_experience: profile.workExperience,
         education: profile.education,
-        job_titles_seeking: splitToArray(profile.jobTitlesSeeking),
+        job_titles_seeking: profile.jobTitlesSeeking,
         remote_preference: profile.remotePreference || null,
         salary_expectation: profile.salaryExpectation || null,
-        preferred_locations: splitToArray(profile.preferredLocations),
+        preferred_locations: profile.preferredLocations,
         is_complete: isComplete,
       })
       .eq("id", user.id);
@@ -83,13 +82,26 @@ export async function saveProfile(profile: Profile): Promise<{ success: boolean;
   }
 }
 
-export async function uploadResume(file: File): Promise<{ success: boolean; url?: string; error?: string }> {
+export async function uploadResume(
+  file: File,
+): Promise<{ success: boolean; url?: string; error?: string }> {
   try {
-    if (file.type !== "application/pdf") {
+    const header = new Uint8Array(await file.slice(0, 5).arrayBuffer());
+    const isPdf =
+      header[0] === 0x25 &&
+      header[1] === 0x50 &&
+      header[2] === 0x44 &&
+      header[3] === 0x46 &&
+      header[4] === 0x2d;
+
+    if (file.type !== "application/pdf" || !isPdf) {
       return { success: false, error: "Please upload a PDF file." };
     }
     if (file.size > RESUME_MAX_SIZE_BYTES) {
-      return { success: false, error: "File is too large. Maximum size is 5MB." };
+      return {
+        success: false,
+        error: "File is too large. Maximum size is 5MB.",
+      };
     }
 
     const insforge = await createInsforgeServer();
@@ -97,13 +109,21 @@ export async function uploadResume(file: File): Promise<{ success: boolean; url?
       data: { user },
     } = await insforge.auth.getCurrentUser();
     if (!user) {
-      return { success: false, error: "You must be signed in to upload a resume." };
+      return {
+        success: false,
+        error: "You must be signed in to upload a resume.",
+      };
     }
 
-    const path = `${user.id}/resume.pdf`;
+    const { data: profileRow } = await insforge.database
+      .from("profiles")
+      .select("resume_pdf_url")
+      .eq("id", user.id)
+      .single();
+    const previousPath = profileRow?.resume_pdf_url;
+    const path = `${user.id}/${crypto.randomUUID()}.pdf`;
     const bucket = insforge.storage.from("resumes");
 
-    await bucket.remove(path);
     const { data, error: uploadError } = await bucket.upload(path, file);
     if (uploadError || !data) {
       console.error("[actions/profile]", uploadError);
@@ -118,13 +138,28 @@ export async function uploadResume(file: File): Promise<{ success: boolean; url?
       .eq("id", user.id);
     if (updateError) {
       console.error("[actions/profile]", updateError);
+      await bucket.remove(path).catch((removeError) => {
+        console.error("[actions/profile]", removeError);
+      });
       return { success: false, error: "Failed to upload resume" };
     }
 
-    const { data: signed, error: signError } = await bucket.createSignedUrl(path, RESUME_VIEW_URL_TTL_SECONDS);
+    if (previousPath && previousPath !== path) {
+      await bucket.remove(previousPath).catch((removeError) => {
+        console.error("[actions/profile]", removeError);
+      });
+    }
+
+    const { data: signed, error: signError } = await bucket.createSignedUrl(
+      path,
+      RESUME_VIEW_URL_TTL_SECONDS,
+    );
     if (signError || !signed) {
       console.error("[actions/profile]", signError);
-      return { success: false, error: "Resume uploaded, but failed to generate a preview link" };
+      return {
+        success: false,
+        error: "Resume uploaded, but failed to generate a preview link",
+      };
     }
 
     revalidatePath("/profile");

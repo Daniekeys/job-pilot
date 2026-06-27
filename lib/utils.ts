@@ -27,7 +27,10 @@ type ProfileCompletion = {
   isComplete: boolean;
 };
 
-const REQUIRED_PROFILE_CHECKS: { label: string; isFilled: (profile: Profile) => boolean }[] = [
+const REQUIRED_PROFILE_CHECKS: {
+  label: string;
+  isFilled: (profile: Profile) => boolean;
+}[] = [
   { label: "Full Name", isFilled: (p) => p.fullName.trim() !== "" },
   { label: "Phone", isFilled: (p) => p.phone.trim() !== "" },
   { label: "Location", isFilled: (p) => p.location.trim() !== "" },
@@ -39,14 +42,22 @@ const REQUIRED_PROFILE_CHECKS: { label: string; isFilled: (profile: Profile) => 
     label: "Work Experience",
     isFilled: (p) =>
       p.workExperience.some(
-        (role) => role.companyName.trim() !== "" && role.jobTitle.trim() !== "" && role.startDate.trim() !== "",
+        (role) =>
+          role.companyName.trim() !== "" &&
+          role.jobTitle.trim() !== "" &&
+          role.startDate.trim() !== "",
       ),
   },
   {
     label: "Education",
-    isFilled: (p) => p.education.highestDegree.trim() !== "" && p.education.institutionName.trim() !== "",
+    isFilled: (p) =>
+      p.education.highestDegree.trim() !== "" &&
+      p.education.institutionName.trim() !== "",
   },
-  { label: "Job Titles Seeking", isFilled: (p) => p.jobTitlesSeeking.trim() !== "" },
+  {
+    label: "Job Titles Seeking",
+    isFilled: (p) => p.jobTitlesSeeking.length > 0,
+  },
   { label: "Remote Preference", isFilled: (p) => p.remotePreference !== "" },
   { label: "Work Authorization", isFilled: (p) => p.workAuthorization !== "" },
 ];
@@ -58,19 +69,27 @@ export function formatRelativeTime(isoDate: string): string {
   const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
 
   if (diffMinutes < 1) return "Just now";
-  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
-  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+  if (diffMinutes < 60)
+    return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
+  if (diffHours < 24)
+    return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays} days ago`;
-  return new Date(isoDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return new Date(isoDate).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function getProfileCompletion(profile: Profile): ProfileCompletion {
-  const missingFields = REQUIRED_PROFILE_CHECKS.filter((check) => !check.isFilled(profile)).map(
-    (check) => check.label,
-  );
+  const missingFields = REQUIRED_PROFILE_CHECKS.filter(
+    (check) => !check.isFilled(profile),
+  ).map((check) => check.label);
   const percentage = Math.round(
-    ((REQUIRED_PROFILE_CHECKS.length - missingFields.length) / REQUIRED_PROFILE_CHECKS.length) * 100,
+    ((REQUIRED_PROFILE_CHECKS.length - missingFields.length) /
+      REQUIRED_PROFILE_CHECKS.length) *
+      100,
   );
 
   return { percentage, missingFields, isComplete: missingFields.length === 0 };

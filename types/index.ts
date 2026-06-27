@@ -1,4 +1,7 @@
-export type WorkAuthorization = "citizen" | "permanent_resident" | "visa_required";
+export type WorkAuthorization =
+  | "citizen"
+  | "permanent_resident"
+  | "visa_required";
 
 export type ExperienceLevel = "junior" | "mid" | "senior" | "lead";
 
@@ -22,6 +25,18 @@ export type Education = {
 
 export type JobSource = "search" | "url";
 
+export type CompanyDossier = {
+  companyOverview: string;
+  techStack: string[];
+  culture: string[];
+  whyThisRole: string;
+  yourEdge: string[];
+  gapsToAddress: string[];
+  smartQuestions: string[];
+  interviewPrep: string[];
+  sources: string[];
+};
+
 export type Job = {
   id: string;
   runId: string | null;
@@ -38,6 +53,7 @@ export type Job = {
   matchReason: string;
   matchedSkills: string[];
   missingSkills: string[];
+  companyResearch: CompanyDossier | null;
   foundAt: string;
 };
 
@@ -57,10 +73,10 @@ export type Profile = {
   industries: string[];
   workExperience: WorkExperience[];
   education: Education;
-  jobTitlesSeeking: string;
+  jobTitlesSeeking: string[];
   remotePreference: RemotePreference | "";
   salaryExpectation: string;
-  preferredLocations: string;
+  preferredLocations: string[];
   resumePdfUrl: string | null;
   isComplete: boolean;
 };

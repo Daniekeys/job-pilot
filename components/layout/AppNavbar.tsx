@@ -15,9 +15,15 @@ export function AppNavbar() {
 
   return (
     <header className="h-16 w-full border-b border-border bg-surface">
-      <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between px-6">
+      <div className="mx-auto flex h-full max-w-360 items-center justify-between px-6">
         <Link href="/dashboard" className="flex items-center">
-          <Image src="/logo.png" alt="JobPilot" width={496} height={168} className="h-8 w-auto" />
+          <Image
+            src="/logo.png"
+            alt="JobPilot"
+            width={496}
+            height={168}
+            className="h-8 w-auto"
+          />
         </Link>
 
         <nav className="flex items-center gap-8">
@@ -27,6 +33,7 @@ export function AppNavbar() {
               <Link
                 key={link.href}
                 href={link.href}
+                aria-current={isActive ? "page" : undefined}
                 className={
                   isActive
                     ? "text-sm font-medium text-accent"

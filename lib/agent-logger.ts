@@ -1,7 +1,7 @@
 import { createInsforgeServer } from "@/lib/insforge-server";
 
 export async function logAgentError(
-  runId: string,
+  runId: string | null,
   userId: string,
   message: string,
   jobId?: string,

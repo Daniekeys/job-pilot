@@ -135,7 +135,10 @@ await bucket.remove(`${userId}/resume.pdf`);
 const { data, error } = await bucket.upload(`${userId}/resume.pdf`, fileOrBlob);
 
 // Private bucket — mint a signed URL for browser access, never getPublicUrl
-const { data: signed } = await bucket.createSignedUrl(`${userId}/resume.pdf`, 60 * 60 * 24); // 24h TTL
+const { data: signed } = await bucket.createSignedUrl(
+  `${userId}/resume.pdf`,
+  60 * 60 * 24,
+); // 24h TTL
 const url = signed?.signedUrl;
 ```
 
@@ -166,9 +169,13 @@ const url = signed?.signedUrl;
 // Adzuna's `category` param accepts exactly one tag per request — there is no comma-separated
 // multi-category syntax. To cover both IT and design roles, ADZUNA_CATEGORIES (["it-jobs",
 // "creative-design-jobs"]) is queried in parallel per search and the results are merged/deduped
-// by job id. Never go back to a single hardcoded category=it-jobs call.
-export async function searchJobs(jobTitle: string, country: string): Promise<AdzunaJob[]> {
-  const resultsByCategory = await Promise.all(
+// by job id. Category requests are wrapped in Promise.allSettled so one failing category does not
+// fail the whole search, and scoring is batched in chunks of 10 jobs to stay within provider limits.
+export async function searchJobs(
+  jobTitle: string,
+  country: string,
+): Promise<AdzunaJob[]> {
+  const resultsByCategory = await Promise.allSettled(
     ADZUNA_CATEGORIES.map((category) => {
       const params = new URLSearchParams({
         app_id: process.env.ADZUNA_APP_ID!,
@@ -178,7 +185,9 @@ export async function searchJobs(jobTitle: string, country: string): Promise<Adz
         results_per_page: "5", // 5 per category × 2 categories = same total budget as the old single-category "10"
         "content-type": "application/json",
       });
-      return fetch(`https://api.adzuna.com/v1/api/jobs/${country}/search/1?${params}`).then((res) => {
+      return fetch(
+        `https://api.adzuna.com/v1/api/jobs/${country}/search/1?${params}`,
+      ).then((res) => {
         if (!res.ok) throw new Error(`Adzuna API error: ${res.status}`);
         return res.json();
       });
@@ -186,8 +195,17 @@ export async function searchJobs(jobTitle: string, country: string): Promise<Adz
   );
 
   const seen = new Map<string, AdzunaJob>();
-  for (const job of resultsByCategory.flatMap((page) => page.results ?? [])) {
-    seen.set(job.id, job);
+  let fulfilledCount = 0;
+  for (const result of resultsByCategory) {
+    if (result.status === "fulfilled") {
+      fulfilledCount += 1;
+      for (const job of result.value.results ?? []) {
+        seen.set(job.id, job);
+      }
+    }
+  }
+  if (fulfilledCount === 0) {
+    throw new Error("All Adzuna category requests failed");
   }
   return [...seen.values()];
 }
@@ -256,36 +274,24 @@ const jobRecord = {
 
 **Check first:** Check AGENTS.md for an installed Browserbase skill. If a Browserbase MCP server is configured — use it. The skill/MCP will have the latest session management and API patterns.
 
-### Session Creation — Company Research
+**No direct `@browserbasehq/sdk` calls or `lib/browserbase.ts` client exist in this project.** The installed Stagehand v3 (`@browserbasehq/stagehand`) creates and owns its own Browserbase session internally via `browserbaseSessionCreateParams` — there's no separate "create a session via the Browserbase SDK, then hand its id to Stagehand" step needed (that two-step pattern was specific to older Stagehand versions). `@browserbasehq/sdk` is still an installed dependency (Stagehand's own types reference it), just not imported directly anywhere in app code. See the Stagehand section below for the actual session-creation pattern used (`agent/company-research.ts`).
 
-```typescript
-import Browserbase from "@browserbasehq/sdk";
-
-const bb = new Browserbase({ apiKey: process.env.BROWSERBASE_API_KEY! });
-
-// Single session for company research — sequential page visits
-const session = await bb.sessions.create({
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  timeout: 120, // 2 minute session — visits 3-4 pages max
-});
-```
-
-**Important — Browserbase runs independently from your Next.js server:**
-Browserbase sessions run on Browserbase's cloud infrastructure, not inside your Next.js API route. The API route triggers the Browserbase session and returns a response while the session continues running independently on Browserbase's platform. Do not add `maxDuration` or any timeout configuration to Next.js API routes to accommodate Browserbase session length.
+**The `POST /api/agent/research` route awaits the full Stagehand session synchronously** — `stagehand.init()`, every `extract()` call, and `stagehand.close()` all happen inside the request handler before it responds, not as a fire-and-forget background trigger. The client-side "Researching..." pending state (see `components/job-details/CompanyResearch.tsx`) exists because the request can take up to the full session timeout.
 
 **Rules:**
 
 - Always use single sessions — never parallel sessions (free plan limit)
 - Session timeout is 120 seconds — sufficient for 3-4 page visits
-- Always end sessions cleanly — call stagehand.close() when done
+- Always end sessions cleanly — call `stagehand.close()` in a `finally` block when done
 - Project ID always from `process.env.BROWSERBASE_PROJECT_ID` — never hardcode
-- Browserbase client lives in `lib/browserbase.ts` — always import from there
 
 ---
 
 ## Stagehand
 
 **Check first:** Check AGENTS.md for an installed Stagehand skill. If a Stagehand MCP server is configured — use it. The skill/MCP will have the latest act() and extract() patterns.
+
+**Installed version: 3.6.0 (v3).** This is a major-version jump from the object-argument API older docs/training data describe — confirmed by reading the installed package's own `.d.ts` files (`node_modules/@browserbasehq/stagehand/dist/esm/lib/v3/`) before writing any code, per AGENTS.md's "this is not the library you know" rule. `extract()`/`act()` take **positional** arguments now, not `{ instruction, schema }` objects, and the exported `Stagehand` class is an alias for an internal `V3` class. There is no separate "create a Browserbase session, then pass its id to Stagehand" step needed — `browserbaseSessionCreateParams` lets Stagehand create and own its session internally.
 
 ### Initialisation
 
@@ -295,71 +301,66 @@ import { Stagehand } from "@browserbasehq/stagehand";
 const stagehand = new Stagehand({
   env: "BROWSERBASE",
   apiKey: process.env.BROWSERBASE_API_KEY!,
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  browserbaseSessionID: session.id,
-  model: { modelName: "openai/gpt-4o", apiKey: process.env.OPENAI_API_KEY! },
+  browserbaseSessionCreateParams: {
+    projectId: process.env.BROWSERBASE_PROJECT_ID!,
+    timeout: 120, // seconds — sufficient for 3-4 page visits
+  },
+  // gpt-4o is retired (Feb 17, 2026) — use the same current OpenAI model the
+  // rest of the app standardized on (see lib/ai-client.ts's PROVIDERS).
+  model: { modelName: "gpt-5.4-mini", apiKey: process.env.OPENAI_API_KEY },
   disablePino: true,
 });
 
 await stagehand.init();
-const page = stagehand.context.activePage()!;
+const page = stagehand.context.activePage();
+if (!page) throw new Error("Stagehand has no active page after init");
+await page.goto("https://example.com", { waitUntil: "domcontentloaded" });
 ```
 
 ### extract()
 
+Positional: `extract(instruction: string, schema: ZodType, options?)`. Navigate with `page.goto()` first — `extract()` reads whatever page is currently active, it does not navigate itself.
+
 ```typescript
 import { z } from "zod";
 
-const result = await stagehand.extract({
-  instruction:
-    "Extract the company overview, main product description, and any technology mentions from this page.",
-  schema: z.object({
+const result = await stagehand.extract(
+  "Extract the company overview, main product description, and any technology mentions from this page.",
+  z.object({
     companyOverview: z.string().optional(),
     mainProduct: z.string().optional(),
     techMentions: z.array(z.string()).optional(),
     navLinks: z
-      .array(
-        z.object({
-          label: z.string(),
-          url: z.string(),
-        }),
-      )
+      .array(z.object({ label: z.string(), url: z.string() }))
       .optional(),
   }),
-});
+);
 ```
 
 ### act()
 
+Also positional: `act(instruction: string, options?)`.
+
 ```typescript
 // Always wrap in try/catch
 try {
-  await stagehand.act({
-    action: "Click the About link in the navigation",
-  });
+  await stagehand.act("Click the About link in the navigation");
 } catch (error) {
-  await logAgentError(jobId, null, error);
+  await logAgentError(runId, userId, `act() failed: ${String(error)}`, jobId);
 }
 ```
 
-## Company Research Section
-
-Replace the existing Stagehand "Company Research Pattern" section in library-docs.md with this:
-
----
-
 ### Company Research Pattern
 
-Three-step process: homepage extraction → sub-page extraction → GPT-4o synthesis.
+Three-step process: homepage extraction → sub-page extraction → AI synthesis.
 Job description and user profile come from DB — never re-fetch what you already have.
-Browser's only job is the company website.
+Browser's only job is the company website. Real implementation: `agent/company-research.ts`.
 
 ```typescript
 // Step 1 — Homepage extraction
-const homepageData = await stagehand.extract({
-  instruction:
-    "This is a company's homepage. Capture what the company actually does, who it's for, and any concrete signals (funding, customers, scale, mission, recent launches). Then find the internal links most worth visiting to research them as an employer.",
-  schema: z.object({
+const homepageData = await stagehand.extract(
+  "This is a company's homepage. Capture what the company actually does, who it's for, and any concrete signals (funding, customers, scale, mission, recent launches). Then find the internal links most worth visiting to research them as an employer.",
+  z.object({
     oneLiner: z.string().describe("What the company does in one sentence"),
     productSummary: z
       .string()
@@ -384,20 +385,20 @@ const homepageData = await stagehand.extract({
       )
       .describe("Internal links worth visiting"),
   }),
-});
+);
 
-// If oneLiner and productSummary are empty — wrong site or parked domain
-// Skip to synthesis with job description and profile only
+// If oneLiner and productSummary are empty — wrong site or parked domain.
+// Skip sub-pages, proceed to synthesis with job description and profile only.
 if (!homepageData.oneLiner && !homepageData.productSummary) {
-  await stagehand.close();
-  // proceed to synthesis with empty companyResearch
+  // proceed to synthesis with homepageData treated as null
 }
 
-// Step 2 — Sub-page extraction (max 3, prefer about/blog/engineering/product over careers)
-const subPageData = await stagehand.extract({
-  instruction:
-    "Extract substance that helps a candidate understand this company before applying: what they do, their values and how they work, the specific technologies and tools they use, notable projects or customers, and how the team operates. Ignore nav, footers, cookie banners, and generic marketing copy.",
-  schema: z.object({
+// Step 2 — Sub-page extraction (max 3, prefer about/blog/engineering/product over careers).
+// Navigate first, then extract — extract() always reads the current page.
+await page.goto(link.url, { waitUntil: "domcontentloaded" });
+const subPageData = await stagehand.extract(
+  "Extract substance that helps a candidate understand this company before applying: what they do, their values and how they work, the specific technologies and tools they use, notable projects or customers, and how the team operates. Ignore nav, footers, cookie banners, and generic marketing copy.",
+  z.object({
     keyPoints: z.array(z.string()),
     technologies: z
       .array(z.string())
@@ -409,11 +410,13 @@ const subPageData = await stagehand.extract({
       .array(z.string())
       .describe("Customers, funding, scale, projects, awards"),
   }),
-});
+);
 
-// Step 3 — GPT-4o synthesis (after browser closes)
-// Feed three data sources: company research + job from DB + profile from DB
-const systemPrompt = `You are a sharp career strategist preparing a candidate to apply for a specific role. You are given (a) research collected from the company's own website, (b) the job posting, and (c) the candidate's profile. Produce a concise, concrete briefing that gives this specific candidate an edge for this specific role.
+// Step 3 — AI synthesis (after the Browserbase session is closed). Goes through the
+// shared 3-provider fallback chain (lib/ai-client.ts's callWithFallback()), not a raw
+// OpenAI call — built as shared infra in feature 07 specifically so company research
+// could reuse it. Feeds three data sources: company research + job from DB + profile from DB.
+const SYSTEM_PROMPT = `You are a sharp career strategist preparing a candidate to apply for a specific role. You are given (a) research collected from the company's own website, (b) the job posting, and (c) the candidate's profile. Produce a concise, concrete briefing that gives this specific candidate an edge for this specific role.
 
 Rules:
 - Ground every company claim in the provided research or job posting. Never invent funding, customers, headcount, or facts. If research was thin, infer carefully from the job posting and say what's inferred.
@@ -422,43 +425,35 @@ Rules:
 - Talking points and questions must reference real things from the research, the kind of detail that signals the candidate did their homework.
 - Keep every item tight: one or two sentences. No fluff.
 
-Return ONLY valid JSON matching this shape:
+Return ONLY valid, strict JSON matching this exact shape — no markdown fences, no commentary,
+and no raw line breaks inside string values (escape any line break as \\n). If you have
+nothing for a field, return "" for strings or [] for arrays — never omit the key:
 {
-  "companyOverview": string,
-  "techStack": string[],
-  "culture": string[],
-  "whyThisRole": string,
-  "yourEdge": string[],
-  "gapsToAddress": string[],
-  "smartQuestions": string[],
-  "interviewPrep": string[],
-  "sources": string[]
+  "companyOverview": string, "techStack": string[], "culture": string[], "whyThisRole": string,
+  "yourEdge": string[], "gapsToAddress": string[], "smartQuestions": string[],
+  "interviewPrep": string[], "sources": string[]
 }`;
 
-const userPrompt = `COMPANY RESEARCH (from their website):
-${JSON.stringify(companyResearch)}
+const result = await callWithFallback({
+  systemPrompt: SYSTEM_PROMPT,
+  userPrompt: `COMPANY RESEARCH (from their website): ${JSON.stringify({ homepage: homepageData, subPages: subPageData })}
 
 JOB POSTING:
 Title: ${job.title}
 Company: ${job.company}
-Description: ${job.description}
-Matched skills (already computed): ${job.matched_skills.join(", ")}
-Missing skills (already computed): ${job.missing_skills.join(", ")}
+Description: ${job.aboutRole}
+Matched skills (already computed): ${job.matchedSkills.join(", ")}
+Missing skills (already computed): ${job.missingSkills.join(", ")}
 
 CANDIDATE PROFILE:
-Current title: ${profile.current_title}
-Experience: ${profile.years_experience} years, level ${profile.experience_level}
+Current title: ${profile.currentTitle}
+Experience: ${profile.yearsExperience} years, level ${profile.experienceLevel}
 Skills: ${profile.skills.join(", ")}
-Work history: ${JSON.stringify(profile.work_experience)}`;
-
-const response = await openai.chat.completions.create({
-  model: "gpt-4o",
-  response_format: { type: "json_object" },
+Work history: ${JSON.stringify(profile.workExperience)}`,
+  schema: dossierSchema, // Zod schema — fields are nullable/optional (see Rules), never strict-required
   temperature: 0.4,
-  messages: [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ],
+  maxTokens: 2000, // 800 truncated real responses mid-JSON — see Rules
+  timeoutMs: 35_000, // this prompt is bigger than the 20s default was tuned for
 });
 ```
 
@@ -478,13 +473,15 @@ const response = await openai.chat.completions.create({
 
 **Rules:**
 
-- Always use `extract()` with a Zod schema — never parse raw HTML or use regex
-- Always wrap every `act()` and `extract()` in try/catch
-- Always call `await stagehand.close()` when done — ends the Browserbase session
-- Model is always `gpt-4o` — never use other models
+- Always use `extract(instruction, schema)` (positional, v3 API) — never parse raw HTML or use regex
+- Always wrap every `act()` and `extract()` in try/catch, logging via `logAgentError(runId, userId, message, jobId)` — `runId` may be `null` (`agent_logs.run_id` is nullable; company research logs against the job's own `run_id`, not a new agent run)
+- Always call `await stagehand.close()` in a `finally` block — ends the Browserbase session even if research throws
+- Stagehand's own extraction model is `gpt-5.4-mini` (gpt-4o is retired) — synthesis goes through `callWithFallback()`, never a raw OpenAI call
+- **The synthesis `systemPrompt` must spell out the exact JSON shape** (field names + types), same as `agent/extractor.ts` — "Return ONLY valid JSON" with no shape produces inconsistent field names/verbosity across providers. Confirmed via a live failure where all 3 providers failed (truncated/malformed JSON, schema mismatch) with no shape given.
+- `dossierSchema`'s fields are nullable/optional (`nullableString`/`nullableStringArray`, same pattern as `extractor.ts`), never strict-required — normalize nulls to `""`/`[]` before saving. A provider omitting one thin field shouldn't fail the whole dossier.
+- `maxTokens: 2000`, not `800` — 9 fields with several bullet arrays needs more headroom than a single-paragraph extraction; 800 truncated real responses mid-JSON.
 - Temperature is `0.4` for synthesis — grounded but flexible enough to make real connections
 - Max 3 sub-pages — never exceed this on free plan
-- Always close session in finally block — never leave sessions open even if research fails
 - Job description and profile always come from DB — never re-fetch via browser
 - If browser research returns empty — still run synthesis with job + profile only
 - yourEdge, gapsToAddress, and smartQuestions are the most valuable fields — never skip them
@@ -527,7 +524,7 @@ const result = JSON.parse(response.choices[0].message.content!);
 **Max tokens:**
 
 - Job matching + scoring: `300`
-- Company research synthesis: `800`
+- Company research synthesis: `2000` (was `800` — truncated real responses; see Stagehand section)
 - Resume generation: `1000`
 - Profile extraction from resume: `800`
 
@@ -640,22 +637,28 @@ export function ResumePDF({ profile }: { profile: Profile }) {
 
 ```typescript
 // app/api/resume/generate/route.ts (.ts, not .tsx — call the template as a function, no JSX needed here)
-import { renderToBuffer } from '@react-pdf/renderer'
-import { ResumePDF } from '@/agent/resume-pdf'
+import { renderToBuffer } from "@react-pdf/renderer";
+import { ResumePDF } from "@/agent/resume-pdf";
 
-const buffer = await renderToBuffer(ResumePDF({ profile }))
+const buffer = await renderToBuffer(ResumePDF({ profile }));
 
 // resumes is a PRIVATE bucket — upload() takes File | Blob, not a raw Buffer, and has
 // no contentType/upsert options. Buffer.buffer is typed ArrayBufferLike (may be a
 // SharedArrayBuffer), so wrap in a fresh Uint8Array first to satisfy BlobPart.
-const path = `${userId}/resume.pdf`
-const bucket = insforge.storage.from('resumes')
-await bucket.remove(path) // manual upsert — see InsForge Storage section above
-const { data, error } = await bucket.upload(path, new Blob([new Uint8Array(buffer)], { type: 'application/pdf' }))
+const path = `${userId}/resume.pdf`;
+const bucket = insforge.storage.from("resumes");
+await bucket.remove(path); // manual upsert — see InsForge Storage section above
+const { data, error } = await bucket.upload(
+  path,
+  new Blob([new Uint8Array(buffer)], { type: "application/pdf" }),
+);
 
 // Save the STORAGE PATH to the DB, not a URL — resumes is private, so callers must mint
 // a signed URL via bucket.createSignedUrl(path, ttlSeconds) on every read, never getPublicUrl.
-await insforge.database.from('profiles').update({ resume_pdf_url: path }).eq('id', userId)
+await insforge.database
+  .from("profiles")
+  .update({ resume_pdf_url: path })
+  .eq("id", userId);
 ```
 
 **Supported CSS properties:**

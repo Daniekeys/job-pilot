@@ -1,7 +1,6 @@
 "use client";
 
 import { Building2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 
 import { formatRelativeTime } from "@/lib/utils";
 import type { Job } from "@/types";
@@ -18,7 +17,9 @@ function scoreColorClass(score: number): string {
 }
 
 function sourceBadgeClass(source: Job["source"]): string {
-  return source === "search" ? "bg-info-lightest text-info-foreground" : "bg-surface-secondary text-text-secondary";
+  return source === "search"
+    ? "bg-info-lightest text-info-foreground"
+    : "bg-surface-secondary text-text-secondary";
 }
 
 function sourceLabel(source: Job["source"]): string {
@@ -26,8 +27,6 @@ function sourceLabel(source: Job["source"]): string {
 }
 
 export function JobsTable({ jobs, hasActiveFilters }: Props) {
-  const router = useRouter();
-
   return (
     <table className="w-full">
       <thead>
@@ -55,7 +54,10 @@ export function JobsTable({ jobs, hasActiveFilters }: Props) {
       <tbody>
         {jobs.length === 0 && (
           <tr>
-            <td colSpan={6} className="px-4 py-10 text-center text-sm text-text-muted">
+            <td
+              colSpan={6}
+              className="px-4 py-10 text-center text-sm text-text-muted"
+            >
               {hasActiveFilters
                 ? "No jobs match your filters — try adjusting your search or match filter."
                 : "No jobs found yet — search above to get started."}
@@ -65,18 +67,26 @@ export function JobsTable({ jobs, hasActiveFilters }: Props) {
         {jobs.map((job, index) => (
           <tr
             key={job.id}
-            onClick={() => router.push(`/find-jobs/${job.id}`)}
-            className={`cursor-pointer hover:bg-surface-secondary ${index < jobs.length - 1 ? "border-b border-border" : ""}`}
+            className={`hover:bg-surface-secondary ${index < jobs.length - 1 ? "border-b border-border" : ""}`}
           >
             <td className="px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="flex size-8 items-center justify-center rounded-md bg-surface-tertiary">
                   <Building2 className="size-4 text-text-muted" />
                 </span>
-                <span className="text-sm font-medium text-text-primary">{job.company}</span>
+                <span className="text-sm font-medium text-text-primary">
+                  {job.company}
+                </span>
               </div>
             </td>
-            <td className="px-4 py-3 text-sm text-text-primary">{job.title}</td>
+            <td className="px-4 py-3 text-sm text-text-primary">
+              <a
+                href={`/find-jobs/${job.id}`}
+                className="font-medium text-text-primary hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                {job.title}
+              </a>
+            </td>
             <td className="px-4 py-3">
               <div className="flex items-center gap-2">
                 <div className="h-1 w-24 rounded-full bg-border-light">
@@ -85,10 +95,14 @@ export function JobsTable({ jobs, hasActiveFilters }: Props) {
                     style={{ width: `${job.matchScore}%` }}
                   />
                 </div>
-                <span className="text-sm font-medium text-text-primary">{job.matchScore}%</span>
+                <span className="text-sm font-medium text-text-primary">
+                  {job.matchScore}%
+                </span>
               </div>
             </td>
-            <td className="px-4 py-3 text-sm text-text-secondary">{job.salary}</td>
+            <td className="px-4 py-3 text-sm text-text-secondary">
+              {job.salary}
+            </td>
             <td className="px-4 py-3">
               <span
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${sourceBadgeClass(job.source)}`}
@@ -96,7 +110,9 @@ export function JobsTable({ jobs, hasActiveFilters }: Props) {
                 {sourceLabel(job.source)}
               </span>
             </td>
-            <td className="px-4 py-3 text-sm text-text-muted">{formatRelativeTime(job.foundAt)}</td>
+            <td className="px-4 py-3 text-sm text-text-muted">
+              {formatRelativeTime(job.foundAt)}
+            </td>
           </tr>
         ))}
       </tbody>

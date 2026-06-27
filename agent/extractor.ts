@@ -35,21 +35,106 @@ const extractedProfileSchema = z.object({
   location: nullableString,
   linkedinUrl: nullableString,
   portfolioUrl: nullableString,
-  workAuthorization: z.union([z.enum(["citizen", "permanent_resident", "visa_required"]), z.literal(""), z.null()]).optional(),
+  workAuthorization: z
+    .union([
+      z.enum(["citizen", "permanent_resident", "visa_required"]),
+      z.literal(""),
+      z.null(),
+    ])
+    .optional(),
   currentTitle: nullableString,
-  experienceLevel: z.union([z.enum(["junior", "mid", "senior", "lead"]), z.literal(""), z.null()]).optional(),
+  experienceLevel: z
+    .union([
+      z.enum(["junior", "mid", "senior", "lead"]),
+      z.literal(""),
+      z.null(),
+    ])
+    .optional(),
   yearsExperience: z.union([z.number(), z.null()]).optional(),
   skills: nullableStringArray,
   industries: nullableStringArray,
   workExperience: z.union([z.array(workExperienceSchema), z.null()]).optional(),
   education: z.union([educationSchema, z.null()]).optional(),
   jobTitlesSeeking: nullableStringArray,
-  remotePreference: z.union([z.enum(["remote", "onsite", "hybrid", "any"]), z.literal(""), z.null()]).optional(),
+  remotePreference: z
+    .union([
+      z.enum(["remote", "onsite", "hybrid", "any"]),
+      z.literal(""),
+      z.null(),
+    ])
+    .optional(),
   salaryExpectation: nullableString,
   preferredLocations: nullableStringArray,
 });
 
 type ExtractedProfile = z.infer<typeof extractedProfileSchema>;
+
+function hasText(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function nonEmptyStrings(
+  values: string[] | null | undefined,
+): string[] | undefined {
+  const trimmed = values
+    ?.map((value) => value.trim())
+    .filter((value) => value !== "");
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function mapWorkExperience(
+  experiences: ExtractedProfile["workExperience"],
+): Profile["workExperience"] | undefined {
+  if (!Array.isArray(experiences) || experiences.length === 0) {
+    return undefined;
+  }
+
+  const mapped: Profile["workExperience"] = [];
+  for (const role of experiences.slice(0, MAX_WORK_EXPERIENCE_ROLES)) {
+    if (
+      !hasText(role.companyName) ||
+      !hasText(role.jobTitle) ||
+      !hasText(role.startDate) ||
+      !hasText(role.endDate) ||
+      typeof role.isCurrent !== "boolean" ||
+      !hasText(role.responsibilities)
+    ) {
+      continue;
+    }
+
+    mapped.push({
+      companyName: role.companyName,
+      jobTitle: role.jobTitle,
+      startDate: role.startDate,
+      endDate: role.endDate,
+      isCurrent: role.isCurrent,
+      responsibilities: role.responsibilities,
+    });
+  }
+
+  return mapped.length > 0 ? mapped : undefined;
+}
+
+function mapEducation(
+  education: ExtractedProfile["education"],
+): Profile["education"] | undefined {
+  if (
+    !education ||
+    !hasText(education.highestDegree) ||
+    !hasText(education.fieldOfStudy) ||
+    !hasText(education.institutionName) ||
+    !hasText(education.graduationYear)
+  ) {
+    return undefined;
+  }
+
+  return {
+    highestDegree: education.highestDegree,
+    fieldOfStudy: education.fieldOfStudy,
+    institutionName: education.institutionName,
+    graduationYear: education.graduationYear,
+  };
+}
 
 const SYSTEM_PROMPT = `You are a resume parser. Extract only what is explicitly stated in the resume text below into the given JSON shape.
 
@@ -76,42 +161,55 @@ Rules:
 }`;
 
 function mapToProfilePartial(extracted: ExtractedProfile): Partial<Profile> {
-  return {
-    fullName: extracted.fullName ?? "",
-    phone: extracted.phone ?? "",
-    location: extracted.location ?? "",
-    linkedinUrl: extracted.linkedinUrl ?? "",
-    portfolioUrl: extracted.portfolioUrl ?? "",
-    workAuthorization: extracted.workAuthorization ?? "",
-    currentTitle: extracted.currentTitle ?? "",
-    experienceLevel: extracted.experienceLevel ?? "",
-    yearsExperience: extracted.yearsExperience ?? "",
-    skills: extracted.skills ?? [],
-    industries: extracted.industries ?? [],
-    workExperience: (extracted.workExperience ?? []).slice(0, MAX_WORK_EXPERIENCE_ROLES).map((role) => ({
-      companyName: role.companyName ?? "",
-      jobTitle: role.jobTitle ?? "",
-      startDate: role.startDate ?? "",
-      endDate: role.endDate ?? "",
-      isCurrent: role.isCurrent ?? false,
-      responsibilities: role.responsibilities ?? "",
-    })),
-    education: {
-      highestDegree: extracted.education?.highestDegree ?? "",
-      fieldOfStudy: extracted.education?.fieldOfStudy ?? "",
-      institutionName: extracted.education?.institutionName ?? "",
-      graduationYear: extracted.education?.graduationYear ?? "",
-    },
-    jobTitlesSeeking: (extracted.jobTitlesSeeking ?? []).join(", "),
-    remotePreference: extracted.remotePreference ?? "",
-    salaryExpectation: extracted.salaryExpectation ?? "",
-    preferredLocations: (extracted.preferredLocations ?? []).join(", "),
-  };
+  const partial: Partial<Profile> = {};
+
+  if (hasText(extracted.fullName)) partial.fullName = extracted.fullName;
+  if (hasText(extracted.phone)) partial.phone = extracted.phone;
+  if (hasText(extracted.location)) partial.location = extracted.location;
+  if (hasText(extracted.linkedinUrl))
+    partial.linkedinUrl = extracted.linkedinUrl;
+  if (hasText(extracted.portfolioUrl))
+    partial.portfolioUrl = extracted.portfolioUrl;
+  if (hasText(extracted.workAuthorization))
+    partial.workAuthorization = extracted.workAuthorization;
+  if (hasText(extracted.currentTitle))
+    partial.currentTitle = extracted.currentTitle;
+  if (hasText(extracted.experienceLevel))
+    partial.experienceLevel = extracted.experienceLevel;
+  if (typeof extracted.yearsExperience === "number")
+    partial.yearsExperience = extracted.yearsExperience;
+
+  const skills = nonEmptyStrings(extracted.skills);
+  if (skills) partial.skills = skills;
+
+  const industries = nonEmptyStrings(extracted.industries);
+  if (industries) partial.industries = industries;
+
+  const workExperience = mapWorkExperience(extracted.workExperience);
+  if (workExperience) partial.workExperience = workExperience;
+
+  const education = mapEducation(extracted.education);
+  if (education) partial.education = education;
+
+  const jobTitlesSeeking = nonEmptyStrings(extracted.jobTitlesSeeking);
+  if (jobTitlesSeeking) partial.jobTitlesSeeking = jobTitlesSeeking;
+
+  if (hasText(extracted.remotePreference))
+    partial.remotePreference = extracted.remotePreference;
+  if (hasText(extracted.salaryExpectation))
+    partial.salaryExpectation = extracted.salaryExpectation;
+
+  const preferredLocations = nonEmptyStrings(extracted.preferredLocations);
+  if (preferredLocations) partial.preferredLocations = preferredLocations;
+
+  return partial;
 }
 
 export async function extractProfileFromResume(
   resumeText: string,
-): Promise<{ success: true; data: Partial<Profile> } | { success: false; error: string }> {
+): Promise<
+  { success: true; data: Partial<Profile> } | { success: false; error: string }
+> {
   const result = await callWithFallback({
     systemPrompt: SYSTEM_PROMPT,
     userPrompt: `RESUME TEXT:\n${resumeText}`,
@@ -121,7 +219,11 @@ export async function extractProfileFromResume(
   });
 
   if (!result.success) {
-    return { success: false, error: "Could not extract profile details from this resume. Please fill in the fields manually." };
+    return {
+      success: false,
+      error:
+        "Could not extract profile details from this resume. Please fill in the fields manually.",
+    };
   }
 
   return { success: true, data: mapToProfilePartial(result.data) };
