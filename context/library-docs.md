@@ -126,21 +126,17 @@ const { error } = await insforge
 
 ### Storage
 
+The installed `@insforge/sdk` has no `contentType`/`upsert` options and `upload()` takes only `(path, file: File | Blob)` — not a raw `Buffer`. The `resumes` bucket is private (architecture.md's deliberate choice), so there's no `getPublicUrl()` for it; mint a signed URL instead.
+
 ```typescript
-// Upload file
-const { data, error } = await insforge.storage
-  .from("resumes")
-  .upload(`${userId}/resume.pdf`, fileBuffer, {
-    contentType: "application/pdf",
-    upsert: true, // overwrites existing file
-  });
+// Upload file (manual upsert — remove then upload, since there's no upsert flag)
+const bucket = insforge.storage.from("resumes");
+await bucket.remove(`${userId}/resume.pdf`);
+const { data, error } = await bucket.upload(`${userId}/resume.pdf`, fileOrBlob);
 
-// Get public URL
-const { data } = insforge.storage
-  .from("resumes")
-  .getPublicUrl(`${userId}/resume.pdf`);
-
-const url = data.publicUrl;
+// Private bucket — mint a signed URL for browser access, never getPublicUrl
+const { data: signed } = await bucket.createSignedUrl(`${userId}/resume.pdf`, 60 * 60 * 24); // 24h TTL
+const url = signed?.signedUrl;
 ```
 
 **Storage paths:**
@@ -149,9 +145,9 @@ const url = data.publicUrl;
 
 **Rules:**
 
-- Always use `upsert: true` for base resume uploads — overwrites existing file
-- Always save the public URL back to the DB after upload
-- Never write files to disk — always upload buffer directly to storage
+- Always upsert manually (`remove()` then `upload()`) for base resume uploads — overwrites existing file
+- Save the storage PATH to the DB after upload, never a URL — `resumes` is private, so the path must be re-signed via `createSignedUrl()` on every read
+- Never write files to disk — always upload a `File`/`Blob` directly to storage
 
 ---
 
@@ -163,35 +159,37 @@ const url = data.publicUrl;
 
 ```typescript
 // lib/adzuna.ts
-export async function searchJobs(
-  jobTitle: string,
-  location: string,
-  country: string = "us",
-): Promise<AdzunaJob[]> {
-  const params = new URLSearchParams({
-    app_id: process.env.ADZUNA_APP_ID!,
-    app_key: process.env.ADZUNA_APP_KEY!,
-    what: jobTitle,
-    category: "it-jobs", // always filter to IT jobs
-    results_per_page: "10",
-    "content-type": "application/json",
-  });
-
-  // Only add where if location is provided
-  if (location) {
-    params.set("where", location);
-  }
-
-  const response = await fetch(
-    `https://api.adzuna.com/v1/api/jobs/${country}/search/1?${params}`,
+// Location is country-only (a closed dropdown, not free text) — Adzuna's `where` expects a
+// real geocodable place and has no "remote" support (confirmed against their docs), so this
+// app no longer attempts city/region-level `where` filtering at all, only the country itself.
+//
+// Adzuna's `category` param accepts exactly one tag per request — there is no comma-separated
+// multi-category syntax. To cover both IT and design roles, ADZUNA_CATEGORIES (["it-jobs",
+// "creative-design-jobs"]) is queried in parallel per search and the results are merged/deduped
+// by job id. Never go back to a single hardcoded category=it-jobs call.
+export async function searchJobs(jobTitle: string, country: string): Promise<AdzunaJob[]> {
+  const resultsByCategory = await Promise.all(
+    ADZUNA_CATEGORIES.map((category) => {
+      const params = new URLSearchParams({
+        app_id: process.env.ADZUNA_APP_ID!,
+        app_key: process.env.ADZUNA_APP_KEY!,
+        what: jobTitle,
+        category,
+        results_per_page: "5", // 5 per category × 2 categories = same total budget as the old single-category "10"
+        "content-type": "application/json",
+      });
+      return fetch(`https://api.adzuna.com/v1/api/jobs/${country}/search/1?${params}`).then((res) => {
+        if (!res.ok) throw new Error(`Adzuna API error: ${res.status}`);
+        return res.json();
+      });
+    }),
   );
 
-  if (!response.ok) {
-    throw new Error(`Adzuna API error: ${response.status}`);
+  const seen = new Map<string, AdzunaJob>();
+  for (const job of resultsByCategory.flatMap((page) => page.results ?? [])) {
+    seen.set(job.id, job);
   }
-
-  const data = await response.json();
-  return data.results || [];
+  return [...seen.values()];
 }
 ```
 
@@ -232,7 +230,7 @@ const jobRecord = {
   salary: job.salary_min
     ? `$${Math.round(job.salary_min / 1000)}k - $${Math.round(job.salary_max! / 1000)}k`
     : null,
-  job_type: job.contract_type || "fulltime",
+  job_type: mapJobType(job), // NEVER job.contract_type directly — see Rules below
   about_role: job.description, // Adzuna returns snippet — used as description
   match_score: scoredJob.matchScore,
   match_reason: scoredJob.matchReason,
@@ -244,12 +242,13 @@ const jobRecord = {
 
 **Rules:**
 
-- Always include `category=it-jobs` — never search Adzuna without this filter
-- Never pass `where` if location is empty — omit the parameter entirely
+- **Search `ADZUNA_CATEGORIES` (`it-jobs` + `creative-design-jobs`), never a single hardcoded category.** Originally locked to `it-jobs` only per project-overview.md, but real usage showed tech-adjacent titles (UI/UX Designer, Product Designer) are filed under Adzuna's separate "Creative & Design Jobs" category, not IT — searching IT-only for "uiux" returned an unrelated Software Engineer posting that merely mentioned the term, because `category=it-jobs` filtered out every genuine design posting before the keyword search even ran. Developer explicitly chose to widen scope rather than just improve the no-results messaging.
+- **`job_type` must go through `mapJobType()` (`agent/adzuna.ts`), never `job.contract_type` raw.** `jobs.job_type`'s CHECK constraint only allows `'fulltime' | 'parttime' | 'contract'`, but Adzuna's actual values are `contract_type: "permanent" | "contract"` and `contract_time: "full_time" | "part_time"` — passing `contract_type` straight through previously violated the constraint on every insert (`23514` error) whenever Adzuna returned `"permanent"`.
+- **No `where`/free-text location filtering at all** — confirmed against Adzuna's own docs that `where` only accepts real geocodable places (their example: `"london"`) with no "remote"/"anywhere" support. Location is therefore a closed **country dropdown** (`ADZUNA_COUNTRIES` in `lib/utils.ts`), not a text field — `searchJobs(jobTitle, country)` only ever sets the country in the URL path, never a `where` param.
 - `source` is always `'search'` for Adzuna jobs — never any other value
 - `salary_is_predicted: "1"` means Adzuna estimated the salary — this is normal
-- Adzuna description is a snippet — GPT-4o scores from it, not a full description
-- Default country to `'us'` — support `gb`, `au`, `ca` as alternatives
+- Adzuna description is a snippet — the 3-provider fallback chain (`lib/ai-client.ts`) scores from it, not a full description
+- **Adzuna supports exactly 12 countries**: `gb`, `us`, `de`, `fr`, `au`, `nz`, `ca`, `in`, `pl`, `br`, `at`, `za` (`ADZUNA_COUNTRIES` in `lib/utils.ts` is the single source of truth — both the `SearchControls` dropdown and `app/api/agent/find/route.ts` import from it). `lib/adzuna.ts`'s `detectCountry()` keyword-matches free text to one of the 12 and is only used for the profile-fallback path (when the user leaves the dropdown on "Use my profile" and `profile.preferredLocations` needs to be mapped to a country) — never for direct user input, since the dropdown is already constrained to valid codes.
 
 ---
 
@@ -608,10 +607,14 @@ await posthog.shutdown(); // required — ensures event is sent
 
 **Check first:** Check AGENTS.md for an installed react-pdf skill. PDF generation APIs can differ from general training knowledge.
 
+**Installed version:** 4.5.1. No Turbopack bundling issues found (unlike `pdf-parse`) — no `serverExternalPackages` entry needed.
+
 ### Resume PDF Generation
 
+`renderToBuffer`'s TypeScript signature requires the literal `React.ReactElement<DocumentProps>` returned by `<Document>` — passing a wrapper component element (`<ResumePDF profile={profile} />` as JSX, or via `createElement`) fails to type-check, since the wrapper's own props aren't `DocumentProps`. Call the template as a plain function instead so the call expression's type is the `<Document>` element it returns:
+
 ```typescript
-import { renderToBuffer } from '@react-pdf/renderer'
+// agent/resume-pdf.tsx
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
 
 const styles = StyleSheet.create({
@@ -621,27 +624,38 @@ const styles = StyleSheet.create({
   text: { fontSize: 10 },
 })
 
-const ResumePDF = ({ profile }: { profile: Profile }) => (
-  <Document>
-    <Page size="A4" style={styles.page}>
-      <View style={styles.section}>
-        <Text style={styles.heading}>{profile.fullName}</Text>
-        <Text style={styles.text}>{profile.email}</Text>
-      </View>
-    </Page>
-  </Document>
-)
+export function ResumePDF({ profile }: { profile: Profile }) {
+  return (
+    <Document>
+      <Page size="LETTER" style={styles.page}>
+        <View style={styles.section}>
+          <Text style={styles.heading}>{profile.fullName}</Text>
+          <Text style={styles.text}>{profile.email}</Text>
+        </View>
+      </Page>
+    </Document>
+  )
+}
+```
 
-// Generate buffer
-const buffer = await renderToBuffer(<ResumePDF profile={profile} />)
+```typescript
+// app/api/resume/generate/route.ts (.ts, not .tsx — call the template as a function, no JSX needed here)
+import { renderToBuffer } from '@react-pdf/renderer'
+import { ResumePDF } from '@/agent/resume-pdf'
 
-// Upload directly to InsForge Storage
-await insforge.storage
-  .from('resumes')
-  .upload(`${userId}/resume.pdf`, buffer, {
-    contentType: 'application/pdf',
-    upsert: true
-  })
+const buffer = await renderToBuffer(ResumePDF({ profile }))
+
+// resumes is a PRIVATE bucket — upload() takes File | Blob, not a raw Buffer, and has
+// no contentType/upsert options. Buffer.buffer is typed ArrayBufferLike (may be a
+// SharedArrayBuffer), so wrap in a fresh Uint8Array first to satisfy BlobPart.
+const path = `${userId}/resume.pdf`
+const bucket = insforge.storage.from('resumes')
+await bucket.remove(path) // manual upsert — see InsForge Storage section above
+const { data, error } = await bucket.upload(path, new Blob([new Uint8Array(buffer)], { type: 'application/pdf' }))
+
+// Save the STORAGE PATH to the DB, not a URL — resumes is private, so callers must mint
+// a signed URL via bucket.createSignedUrl(path, ttlSeconds) on every read, never getPublicUrl.
+await insforge.database.from('profiles').update({ resume_pdf_url: path }).eq('id', userId)
 ```
 
 **Supported CSS properties:**
@@ -652,9 +666,9 @@ Only use these — others are silently ignored:
 
 - Server-side only — never import in client components
 - Always use `renderToBuffer` — not `renderToStream` or `PDFDownloadLink`
-- PDF generation only in `app/api/resume/` routes
+- PDF generation only in `app/api/resume/` routes — the React-PDF template itself lives in `agent/` (it's part of the resume generation pipeline, not a UI component)
 - Generated buffer uploaded directly to InsForge Storage — never written to disk
-- Always save public URL to DB after upload
+- `resume_pdf_url` always stores the storage path, never a URL — see the InsForge Storage rules above (same private-bucket constraint as the uploaded-resume flow)
 
 ---
 
