@@ -65,7 +65,7 @@ export default async function FindJobsPage({ searchParams }: Props) {
     console.error("[app/find-jobs/page]", error);
     return (
       <>
-        <AppNavbar />
+        <AppNavbar userEmail={user.email ?? ""} />
         <main className="mx-auto flex max-w-360 flex-col gap-6 p-8">
           <SearchControls />
           <div className="rounded-2xl border border-border bg-surface p-6 text-sm text-error shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]">
@@ -81,7 +81,7 @@ export default async function FindJobsPage({ searchParams }: Props) {
 
   return (
     <>
-      <AppNavbar />
+      <AppNavbar userEmail={user.email ?? ""} />
       <main className="mx-auto flex max-w-360 flex-col gap-6 p-8">
         <SearchControls />
 

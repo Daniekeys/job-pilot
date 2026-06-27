@@ -47,7 +47,7 @@ export default async function ProfilePage() {
 
   return (
     <>
-      <AppNavbar />
+      <AppNavbar userEmail={user.email ?? ""} />
       <main className="mx-auto flex max-w-360 flex-col gap-6 p-8">
         {showCompletionIndicator && (
           <CompletionIndicator
