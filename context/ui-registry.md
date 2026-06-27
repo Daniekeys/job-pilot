@@ -81,11 +81,9 @@ Form-wrapped submit button bound directly to a Server Action (`action` prop), us
 
 Logged-in app navbar variant used on `/profile`, `/dashboard`, `/find-jobs` — distinct from the marketing `Navbar` (no CTA button, three nav links with active-state highlighting). `"use client"` (needs `usePathname`). Same `h-16 w-full border-b border-border bg-surface` shell and `max-w-[1440px] mx-auto px-6` inner container as `Navbar`, but right side is just the three nav links (`Dashboard`, `Find Jobs`, `Profile`) instead of nav links + button. Active link (`pathname.startsWith(href)`): `text-sm font-medium text-accent`. Inactive: `text-sm font-medium text-text-dark hover:text-accent` — same inactive color as marketing `Navbar` (`text-text-dark`, not the `#4A5565` literal in ui-rules.md, since that hex has no matching token and the codebase already established this color for inactive nav links).
 
-### ComingSoon
+### ~~ComingSoon~~ (deleted)
 
-`components/layout/ComingSoon.tsx`
-
-Temporary placeholder for routes not yet built (`/dashboard`, `/find-jobs` until Phases 3/5 land). Centered card, `rounded-2xl border border-border bg-surface p-10 text-center` with the standard card shadow, heading + description text props. **Delete this component and its usages once the real Dashboard and Find Jobs page UIs are built — it exists only so `AppNavbar` links don't 404 during Phase 2.**
+Was a temporary placeholder for `/dashboard`/`/find-jobs` before their real UIs existed. Deleted in feature 14 once `/dashboard` (the last route still using it) got its real UI — per its own documented instruction. No remaining usages anywhere in the app.
 
 ### CompletionIndicator
 
@@ -250,6 +248,36 @@ Three body states: empty-state (unchanged from feature 12 — centered `Building
 `components/job-details/JobActions.tsx`
 
 Single full-width "Apply Now at {company}" link (`<a target="_blank">`, not a button — it's pure navigation), `bg-accent text-accent-foreground rounded-lg px-6 py-3` — the one place on this page using `rounded-lg` (12px) instead of the standard `rounded-md` (8px) buttons elsewhere, matching the visibly larger corner radius on this specific full-width bar in the design. Links to `job.externalApplyUrl`, distinct from `JobInfo`'s "View Job Post" which links to `job.sourceUrl` — both currently resolve to the same Adzuna `redirect_url` per feature 10's mapping, but kept as separate fields/buttons matching their distinct names and design positions (header vs. page-bottom).
+
+---
+
+## Dashboard Page (`/dashboard`) — Feature 14
+
+Built pixel-for-pixel from `context/designs/dashboard.png` (colors/values confirmed via cropping the actual PNG, same practice as feature 12/13) per architecture.md's planned `components/dashboard/` folder. Per build-plan.md's "Full UI — Full UI with mock data" scope: stats, activity, and chart values are all hardcoded mock data — only the profile-incomplete banner reads real data (feature 15-17 wire the rest to real InsForge/PostHog data later).
+
+### StatsBar
+
+`components/dashboard/StatsBar.tsx`
+
+`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6`, four standard-shell cards. Label (`text-sm text-text-secondary`), value (`text-3xl font-semibold text-text-primary` — matches ui-tokens.md's 30px/600 stat-number spec), then either a trend row (`rounded-sm bg-success-lightest px-2 py-0.5 text-xs font-medium text-success-darker` pill + `text-xs text-text-muted` caption) for the first two cards, or just the muted caption alone for the last two — matches the design exactly (Companies Researched / Jobs This Week have no trend pill). **Card labels follow the actual screenshot, not build-plan.md's stale text** — build-plan.md's feature 14 section says "Cover Letters Generated" for the fourth card, but cover letter generation is explicitly out of scope (project-overview.md's Features Out of Scope) and the real design/project-overview.md's own stat list both say "Jobs This Week" — design + project-overview.md took precedence over the one stale build-plan.md line.
+
+### RecentActivity
+
+`components/dashboard/RecentActivity.tsx`
+
+Standard card, heading + `divide-y divide-border` list of 5 mock entries. Each row: activity dot (`flex size-4 items-center justify-center rounded-full` outer ring + nested `size-2 rounded-full` inner dot, per ui-tokens.md's Activity Dots spec) + text column (`text-sm font-medium text-text-primary` line, `text-xs text-text-muted` timestamp below). **Dot color is not semantically tied to activity type in this mock** — pixel-confirmed via crop that the design's 5 rows alternate accent/info/success/accent/success regardless of whether the row is a "Found X jobs" or "Researched Y" entry (e.g. "Researched Stripe" is blue, "Researched Vercel" is purple) — reused ui-tokens.md's existing three Activity Dot color pairs (`accent-light`/`accent`, `info-light`/`info`, `success-light`/`success-alt`) positionally to match the screenshot exactly. **Flagging for feature 16 (Real Data):** build-plan.md's feature 16 spec says only two real activity types exist ("agent_run completed" / "company_research populated") with "info blue, success green" — feature 16 will need to decide how 2 real types map onto these 3 mock colors (e.g. drop the third color, or assign a fixed color per type instead of alternating).
+
+### AnalyticsCharts
+
+`components/dashboard/AnalyticsCharts.tsx`
+
+`"use client"` (Recharts' `ResponsiveContainer` measures the DOM). New dependency **`recharts` (3.9.0) installed this feature** — not on code-standards.md's original approved list, added because build-plan.md's feature 17 explicitly names it for these exact three charts; built now with mock data so feature 17 only swaps data sources later. Full rationale, color/gridline/axis patterns in `library-docs.md`'s new Recharts section — don't re-derive those decisions, read that section first before touching any chart.
+
+Exports one component rendering **three sibling `ChartCard`s with no wrapping `<div>`** (a local, unexported `ChartCard` helper — standard shell + `text-base font-semibold` heading + `h-64` chart area), in this order: Company Research Activity (bar, `fill="var(--color-info)"`), Jobs Found Over Time (area, `stroke="var(--color-accent)"` + gradient fill via a `<linearGradient>`), Match Score Distribution (bar, `fill="var(--color-success)"`). This ordering is deliberate: `app/dashboard/page.tsx` renders `<RecentActivity />` then `<AnalyticsCharts />` inside one `grid grid-cols-1 lg:grid-cols-2 gap-6` — with 4 total grid items in a 2-column grid, CSS auto-flow places them exactly as the design shows (Recent Activity beside the first chart, the other two charts on the row below) with no manual row/col-span needed. Mock data points were read off the actual design's bar heights/curve shape (not invented) — see the component for exact arrays.
+
+### `app/dashboard/page.tsx`
+
+Async Server Component, same auth/profile-fetch pattern as `app/profile/page.tsx` (`createInsforgeServer()`, redirect to `/login` if no user, fetch the `profiles` row, `mapRowToProfile`/`createEmptyProfile` fallback). Computes `getProfileCompletion()` and conditionally renders the existing `CompletionIndicator` (reused as-is, no new banner component — same component/copy as `/profile`) above the stats grid when `!isComplete`, per project-overview.md's "Dashboard shows incomplete profile banner if profile not finished." The design screenshot doesn't show this state (that account has a complete profile) — built from the existing real `CompletionIndicator` logic already established on `/profile`, not invented. **Deleted the `ComingSoon` placeholder usage** per its own documented instruction in this file — `ComingSoon` itself is now unused anywhere in the app but left in place in case a future route needs it.
 
 ### `app/find-jobs/[id]/page.tsx`
 

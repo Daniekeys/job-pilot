@@ -317,5 +317,6 @@ Approved dependencies for this project:
 - `lucide-react` — Icons
 - `tailwindcss` — Styling
 - `shadcn/ui` components — UI primitives
+- `recharts` — Dashboard analytics charts (build-plan.md feature 17 names this library explicitly)
 
 Do not install any other packages without updating this list first.

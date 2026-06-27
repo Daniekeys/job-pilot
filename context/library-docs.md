@@ -704,3 +704,57 @@ export async function POST(req: NextRequest) {
 - `pdfData.text` is raw unformatted text — GPT-4o handles the structure extraction
 - Always handle parse errors — some PDFs are image-based and return empty text
 - If `pdfData.text` is empty or very short — return error to user: "Could not extract text from this PDF. Please try a different file."
+
+---
+
+## Recharts
+
+**Check first:** Check AGENTS.md for an installed Recharts skill. No MCP server configured for this library — `context7` was unreachable (network) when this was first added, so the standard `AreaChart`/`BarChart`/`ResponsiveContainer` API (stable across recent major versions) was used directly. Re-verify against the installed version's own types if a chart stops rendering as expected.
+
+**Installed version: 3.9.0.** Not in the original `code-standards.md` approved list — added for feature 14 (Dashboard — Full UI) since build-plan.md's feature 17 explicitly names `recharts` for the three dashboard charts. Built now (with mock data) rather than deferred, so feature 17 only swaps data sources, not the chart components themselves.
+
+### Client Component requirement
+
+`ResponsiveContainer` measures the DOM to size its chart, so every chart must render inside a `"use client"` component — `components/dashboard/AnalyticsCharts.tsx` is `"use client"` for exactly this reason, per code-standards.md's "third party client-only libraries" rule. The chart data itself can still be static/mock or passed down as a prop from a Server Component parent.
+
+### Color tokens in SVG, not Tailwind classes
+
+Recharts' `Bar`/`Area`/`Line` color the SVG directly via the `fill`/`stroke` prop (a real SVG presentation attribute), not a `className`. Passing a Tailwind class has no effect on the rendered shape's color. To stay compliant with ui-tokens.md's "never hardcode hex" rule, pass the CSS variable directly as the attribute value — this is the documented "reference the CSS variable directly" exception ui-tokens.md already allows for inline styles, applied the same way to SVG attributes (both resolve via the CSS cascade in modern browsers):
+
+```tsx
+<Bar dataKey="count" fill="var(--color-info)" />
+<Area dataKey="count" stroke="var(--color-accent)" fill="url(#jobsFoundGradient)" />
+```
+
+Gradient fills (e.g. the "Jobs Found Over Time" area chart) need an SVG `<linearGradient>` in `<defs>`, referenced by `fill="url(#id)"`:
+
+```tsx
+<defs>
+  <linearGradient id="jobsFoundGradient" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.3} />
+    <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
+  </linearGradient>
+</defs>
+```
+
+### Axis tick color — no exact token match
+
+ui-tokens.md's Typography table lists chart axis labels as the literal hex `#9CA3AF`, distinct from `--color-text-muted` (`#99A1AF`) — a one-off value with no backing CSS variable. Same precedent as `AppNavbar`'s inactive nav-link color: reused the closest existing token (`--color-text-muted`) rather than introducing a near-duplicate variable for an imperceptible difference. Pass via the `tick` prop, not `className`:
+
+```tsx
+<XAxis dataKey="day" tick={{ fill: "var(--color-text-muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
+```
+
+### Grid lines
+
+ui-tokens.md specifies dashed grid lines, horizontal only (confirmed against `context/designs/dashboard.png` — no vertical grid lines in any of the three charts):
+
+```tsx
+<CartesianGrid vertical={false} stroke="var(--color-border)" strokeDasharray="3 3" />
+```
+
+**Rules:**
+
+- Always wrap charts in `ResponsiveContainer` — never a fixed pixel width/height
+- Always color via `fill`/`stroke` set to a `var(--color-*)` string — never a hardcoded hex, never a Tailwind class (it won't apply)
+- `AnalyticsCharts.tsx` holds all three dashboard charts in one file, per architecture.md's planned single-file component — it renders three sibling `ChartCard` elements (no shared wrapping `<div>`) so the page's own 2-column grid (`RecentActivity` + the three charts as four grid items) auto-places them into the design's exact layout (Recent Activity beside Company Research Activity, then the other two charts on the row below) without manual row/col-span classes.
