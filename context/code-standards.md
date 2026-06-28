@@ -41,6 +41,7 @@ The AI agent on this project operates as a senior engineer. This means:
   - Browser APIs
   - Event listeners
   - Third party client-only libraries (PostHog browser side)
+  - Framer Motion components (motion.*, AnimatePresence, useScroll, useTransform, useInView)
 - Never add `"use client"` to layout files unless absolutely required
 - Data fetching happens in Server Components — never fetch in Client Components directly
 - Route handlers live in `app/api/` — never put business logic directly in route handlers
@@ -318,5 +319,20 @@ Approved dependencies for this project:
 - `tailwindcss` — Styling
 - `shadcn/ui` components — UI primitives
 - `recharts` — Dashboard analytics charts (build-plan.md feature 17 names this library explicitly)
+- `framer-motion` — Animation library for landing page hero, scroll reveals, product demo motion graphics, and hover micro-interactions
 
 Do not install any other packages without updating this list first.
+
+---
+
+## Animation
+
+- Framer Motion is the only animation library approved for this project
+- All animated components must be Client Components ("use client")
+- Always respect reduced motion — wrap motion variants with:
+  const prefersReducedMotion = useReducedMotion();
+  Use instant transitions when prefersReducedMotion is true
+- Scroll-triggered animations use useInView with { once: true, margin: "-100px" }
+- Never animate layout-affecting properties (width, height, padding) — use opacity and transform only
+- Stagger children using variants with staggerChildren on the parent container
+- Product demo motion graphics live in components/landing/ProductDemo.tsx — self-contained, no props required

@@ -29,43 +29,70 @@ Link-based CTA button (no native button behavior needed yet — every instance n
 - `variant="secondary"`: `bg-surface border border-border text-text-primary hover:bg-surface-secondary`
 - `showIcon` prop renders a trailing `lucide-react` `ChevronRight` (`size-4`)
 
+### ~~Navbar / Footer (homepage) / Hero / Features / Testimonial / CTA~~ (deleted)
+
+`components/layout/{Navbar,Footer}.tsx` and `components/homepage/{Hero,Features,Testimonial,CTA}.tsx` — built for the original screenshot-driven homepage (feature 01), fully replaced by the `components/landing/` rebuild below per `context/landing-page-spec.md`. Deleted entirely, not just unused — confirmed via grep that nothing else in the app imported them. `components/ui/Button.tsx` (the link-based CTA button these used) is left in place since it's a general-purpose primitive, not landing-specific, but has **no current callers anywhere in the app** now that this rebuild uses plain styled `<Link>`s per the new spec instead. Revisit/delete `Button.tsx` if it stays unused once `/how-it-works` and `/pricing` are built.
+
+## Landing Page (`/`) — Rebuild per `context/landing-page-spec.md`
+
+Full homepage rebuild, mock data only, built pixel-exact from the spec (no design screenshot for this version — the spec itself is the source of truth, same authority level as a design PNG elsewhere in this registry). All animated sections are `"use client"` per `code-standards.md`'s Framer Motion trigger rule; every entrance animation reads `useReducedMotion()` and renders the final state immediately (no motion) when true, via the `initial={shouldReduceMotion ? "visible" : "hidden"}` / `animate={isInView || shouldReduceMotion ? "visible" : "hidden"}` pattern (or `initial={shouldReduceMotion ? false : {...}}` for components using inline motion props instead of variants).
+
 ### Navbar
 
-`components/layout/Navbar.tsx`
+`components/landing/Navbar.tsx`
 
-Marketing/logged-out navbar variant used on the homepage. `h-16 w-full border-b border-border bg-surface`, inner container `max-w-[1440px] mx-auto flex items-center justify-between px-6`. Logo rendered via `/logo.png` (combined icon+wordmark asset) at `h-8 w-auto`. Center nav links `text-sm font-medium text-text-dark hover:text-accent`. Right side: primary `Button` ("Start for free").
+Fixed top, full width, `z-50`. Background transitions from transparent to `bg-surface/80 backdrop-blur-md` once `useScroll`'s `scrollY` (via `useMotionValueEvent`) passes 0 — per the spec's explicit instruction to use `useScroll`, not a raw `window.addEventListener("scroll", ...)`. Logo is a built gradient icon box (`size-9 rounded-[10px]`, inline `style` gradient `linear-gradient(45deg, #7C5CFC 0%, #4A2EC5 100%)` — same precedent as the CTA section's glow shadow below, since the `#4A2EC5` stop has no token) with a `Plane` (`lucide-react`) icon inside, white, plus "JobPilot" text — **deliberate deviation from feature 01's `/logo.png` asset reuse**, since this spec explicitly calls for building the gradient icon rather than reusing the combined wordmark PNG. No design mockup specifies icon content inside the gradient box; `Plane` was chosen as a thematic fit ("Pilot") — flag if the developer wants a different glyph. Center nav links (How it Works · Pricing · Sign In) hidden below `md`, replaced by a `Menu`/`X` (lucide) toggle opening a stacked mobile panel. CTA "Get Started Free" → `/login`.
 
 ### Footer
 
-`components/layout/Footer.tsx`
+`components/landing/Footer.tsx`
 
-`border-t border-border bg-surface`, inner container `max-w-[1440px] mx-auto flex items-center justify-between px-6 py-6`. Logo via `/logo.png` at `h-7 w-auto`. Right side links `text-sm text-text-secondary hover:text-text-primary`.
+Server Component, no animation. 4-column grid (`sm:grid-cols-2 lg:grid-cols-4`): logo + tagline, then three `FOOTER_COLUMNS` (Product/Company/Legal) mapped from a module-level array rather than separate components, per `code-standards.md`'s one-export-per-file rule. Bottom bar `© 2025 JobPilot. All rights reserved.` in `text-text-muted`.
 
-### Hero (homepage)
+### HeroSection
 
-`components/homepage/Hero.tsx`
+`components/landing/HeroSection.tsx`
 
-Gradient section `bg-gradient-to-br from-accent-light via-info-lightest to-accent-muted`. Centered headline `text-4xl sm:text-5xl font-bold`, subhead `text-text-secondary`, two `Button`s, and the dashboard preview screenshot (`/images/dashboard-demo.png`) below at `max-w-4xl` with `rounded-2xl shadow-xl`.
+Full viewport height, `bg-background` with an inline radial-gradient background (`rgba(124,92,252,0.08)` — no token for an alpha-blended radial stop, same inline-style exception as ui-tokens.md already allows). Eyebrow badge fades in from `y: -16` with a 300ms delay. Headline's second line cycles through 4 phrases every 2500ms via `AnimatePresence mode="wait"` + a fixed-height (`h-16 md:h-24`) overflow-hidden wrapper so the layout never shifts as phrase lengths vary. CTAs are plain styled `<Link>`s (`Start Finding Jobs` → `/login`, `See how it works` → `/how-it-works`) — no `Button` component reuse, since the spec's exact classes (`h-11 px-6`) don't match `Button`'s `px-4 py-2` shape. Social proof row: 3 overlapping initial-circle avatars (`-space-x-2`, `border-2 border-surface` to separate them) + "Join 11,000+ professionals..." text. Bouncing `ChevronDown` scroll indicator at the bottom, infinite `y: [0,8,0]` loop.
 
-### Features (homepage)
+### ProductDemo
 
-`components/homepage/Features.tsx`
+`components/landing/ProductDemo.tsx`
 
-Two alternating image/text rows in a `grid lg:grid-cols-2 gap-12` layout — "Manage Your Job Search With Ease" (text left, `/images/jobs-lists.png` right) and "Apply With More Confidence, Every Time" (`/images/agnet-log.png` left, text right). Each feature item: `border-l-2 border-border pl-4` with `text-base font-semibold` title and `text-sm text-text-secondary` description. Images sit in a `rounded-2xl bg-surface-tertiary p-8` frame.
+The centerpiece. Self-running 4-phase state machine (`search` → `processing` → `results` → `detail` → loops), driven by one `useEffect`/`setTimeout` chain keyed on the current phase (3000/2000/5000/4000ms — sums to the spec's ~14s loop). Each phase is a local, unexported component (`SearchPhase`/`ProcessingPhase`/`ResultsPhase`/`DetailPhase` — same "local helper components in one file" precedent as `CompanyResearch`'s `Section`/`BulletList` and `AnalyticsCharts`' `ChartCard`) swapped via `AnimatePresence mode="wait"` keyed on `phase`, so each phase's internal `useState`/`useEffect` resets fresh every time it remounts, including on every repeat of the loop.
 
-### Testimonial (homepage)
+- **SearchPhase**: typewriter effect via chained `setInterval`s (80ms/char) — title types out, then location starts only once the title's state equals the full string. "Find Jobs" button pulses (`scale: [1, 1.03, 1]`, infinite) until typing finishes, then switches to a one-time pressed state (`scale: 0.97`).
+- **ProcessingPhase**: `Loader2` spinner + a 0→2,400 counter driven by framer-motion's standalone `animate()` (imperative, not a hook) with `onUpdate` updating local state — matches the spec's explicitly suggested counter pattern. Three `animate-pulse` skeleton rows fade in below, staggered 150ms each via `transition.delay`.
+- **ResultsPhase**: 6 mock rows (Vercel 94/Stripe 88/Linear 96/Notion 72/OpenAI 91/Figma 85) using `staggerContainerVariants`/`fadeUpVariants` from `lib/animation-variants.ts`. Each row's score bar animates `width: 0 → ${score}%` over 600ms, staggered by `index * 80ms` — **a deliberate, spec-mandated exception to `code-standards.md`'s "never animate width" Animation rule**, same precedent as `JobsTable`'s static inline `width: ${score}%` already being the one sanctioned inline-style exception for a computed numeric value; here the spec explicitly requires it to *animate*, so the exception extends to the transition itself. Score color follows the spec's own literal threshold table (`>=70` → success, `50-69` → warning, else muted) — **not** any of the three already-conflicting tables in ui-rules.md/ui-tokens.md/`JobsTable`'s `scoreColorClass()`; this is mock-only decorative content, not a real data display, so it doesn't need to reconcile with that still-open doc conflict. Linear's row gets a one-time `opacity: [1, 0.6, 1]` pulse.
+- **DetailPhase**: static mock job-detail snippet (title/company/match badge/AI reasoning/skill chips), entrance handled by the parent's `AnimatePresence` (slides in from `x: 40` specifically for this phase, fades for the other three).
 
-`components/homepage/Testimonial.tsx`
+Static browser-chrome shell (3 colored dots + `jobpilot.app/find-jobs` URL bar) wraps all 4 phases, always visible.
 
-Not in the original architecture.md component list — added to match the design. Centered `max-w-2xl` quote (`text-lg font-medium`), avatar (`/images/user-icon.png`, `size-10 rounded-full`) + name/title below.
+### FeaturesSection
 
-### CTA (homepage)
+`components/landing/FeaturesSection.tsx`
 
-`components/homepage/CTA.tsx`
+6 cards (`bg-surface border border-border rounded-2xl p-6 shadow-sm`), `staggerContainerVariants`/`fadeUpVariants` triggered by `useInView({ once: true, margin: "-80px" })`. Icon chips `size-10 rounded-xl bg-accent-muted text-accent`. `whileHover={{ y: -4 }}` lift only, per the spec's "no color change" instruction. **Icon substitution**: the spec names `BarChart2` for "Search Analytics," but the installed `lucide-react` version (confirmed via its own `.d.ts`) has no icon by that name — uses `ChartColumn` instead, the closest equivalent in this version's actual icon set.
 
-Not in the original architecture.md component list — added to match the design (bottom banner). Same gradient treatment as Hero, wrapped in a `rounded-2xl` card, reuses the same two `Button`s as Hero.
+### StatsSection
 
-**Note:** `HowItWorks.tsx` from architecture.md's planned file list was not built — the actual design has no 1-2-3 "how it works" steps section, only the two alternating feature blocks above. Design (`context/designs/landing-page.png`) took precedence per ui-rules.md.
+`components/landing/StatsSection.tsx`
+
+`bg-accent py-20`, white text throughout. Each of the 4 stats is its own local `StatItem` (unexported) so each gets an independent `useState` counter — counts 0→value via framer-motion's `animate()` once the shared `useInView({ once: true })` ref (on the grid wrapper) becomes true. Reduced motion is handled by setting the `animate()` call's own `duration` to `0` rather than a separate synchronous `setState` branch — the latter tripped `react-hooks/set-state-in-effect` (calling `setState` directly in an effect body); routing both paths through the same `onUpdate` callback keeps the state update inside the "subscribe to an external animation" effect pattern the lint rule expects.
+
+### TestimonialsSection
+
+`components/landing/TestimonialsSection.tsx`
+
+3 cards (`bg-surface-secondary border border-border rounded-2xl p-6`), `scaleInVariants` + `staggerContainerVariants`, `useInView({ once: true, margin: "-80px" })`. Avatar is an initial-letter circle (`bg-accent-light text-accent`), same pattern as `AppNavbar`'s user-menu trigger and Hero's social-proof avatars — no real headshot assets exist for mock testimonials.
+
+### CtaSection
+
+`components/landing/CtaSection.tsx`
+
+`bg-accent rounded-3xl` container with an inline `boxShadow: "0 0 80px rgba(124,92,252,0.3)"` glow — explicit inline style per the spec, same "computed/one-off value with no token" exception as the Hero background gradient. Button is white-on-accent (`bg-white text-accent`), `whileHover={{ scale: 1.03 }}` on a wrapping `motion.div` around the `<Link>` (motion props can't go directly on a Next.js `Link`).
+
+**Note:** `HowItWorks.tsx` from architecture.md's original planned file list still isn't built as a standalone homepage section — `context/how-it-works-spec.md` exists as a separate page spec (`/how-it-works`), not a homepage section, consistent with this rebuild's Hero CTA linking to `/how-it-works` as its own route.
 
 ### OAuthButton
 
@@ -286,6 +313,40 @@ Exports one component rendering **three sibling `ChartCard`s with no wrapping `<
 ### `app/dashboard/page.tsx`
 
 Async Server Component, same auth/profile-fetch pattern as `app/profile/page.tsx` (`createInsforgeServer()`, redirect to `/login` if no user, fetch the `profiles` row, `mapRowToProfile`/`createEmptyProfile` fallback). Computes `getProfileCompletion()` and conditionally renders the existing `CompletionIndicator` (reused as-is, no new banner component — same component/copy as `/profile`) above the stats grid when `!isComplete`, per project-overview.md's "Dashboard shows incomplete profile banner if profile not finished." The design screenshot doesn't show this state (that account has a complete profile) — built from the existing real `CompletionIndicator` logic already established on `/profile`, not invented. **Deleted the `ComingSoon` placeholder usage** per its own documented instruction in this file — `ComingSoon` itself is now unused anywhere in the app but left in place in case a future route needs it.
+
+---
+
+## How It Works Page (`/how-it-works`) — Built per `context/how-it-works-spec.md`
+
+New `app/how-it-works/page.tsx` + `components/landing/how-it-works/{PageHeader,StepsSection,DeepDiveSection,HowItWorksCta}.tsx`, reusing the existing `components/landing/{Navbar,Footer}.tsx`. Mock data only, built directly from the spec (no design screenshot — same "spec is the source of truth" authority as `landing-page-spec.md`).
+
+### PageHeader
+
+`components/landing/how-it-works/PageHeader.tsx`
+
+Server Component, no animation — plain centered hero text block (`bg-background pt-32 pb-16`), same `pt-32` top offset pattern needed under the fixed `Navbar` (a non-sticky page, so no `useScroll` blur logic is needed here, just static clearance).
+
+### StepsSection
+
+`components/landing/how-it-works/StepsSection.tsx`
+
+`"use client"`. Three step cards in a `STEPS` array (mirrors `FeaturesSection`'s array-of-objects-with-a-`mockup`-node pattern), `staggerContainerVariants`/`fadeUpVariants` from `lib/animation-variants.ts` triggered by `useInView({ once: true, margin: "-100px" })`. **Stagger overridden to 150ms via an explicit `transition={{ staggerChildren: 0.15 }}` prop on the same `motion.div`** — the shared `staggerContainerVariants` hardcodes 100ms, but this spec explicitly calls for 150ms; passing `transition` directly on a `motion` component takes precedence over the variant's own `transition` block, so the shared variant is still reused (per code-standards.md's "Animation variants imported from lib/animation-variants.ts" rule) without forking a second copy of the variant. Desktop-only dashed connector line (`border-t-2 border-dashed border-border`, `transformOrigin: "left"`) animates `scaleX: 0 → 1` via a sibling `motion.div`, gated on the same `isVisible` flag. Each step's "mini UI mockup" is built from styled `<div>`s, never real `<input>`/`<button>` elements (per the spec's explicit "not a real form" instruction for step 1, applied consistently to steps 2/3 too since none of it is interactive). **Step 3's match-score colors follow the spec's literal pixel values (94% → green, 72% → orange), not ui-tokens.md's generic threshold table** (which would call both green) — same "spec/design pixels win over a generic conflicting doc table" precedent as `JobsTable`'s `scoreColorClass()` and `JobInfo`'s match badge. Bar fill width is the one sanctioned inline style (`width: ${score}%`), same precedent as `JobsTable`.
+
+### DeepDiveSection
+
+`components/landing/how-it-works/DeepDiveSection.tsx`
+
+`"use client"`. Three `DEEP_DIVES` entries rendered by a local, unexported `DeepDiveRow` helper (one `useInView`/`useReducedMotion` pair per row, so each row's reveal triggers independently as it scrolls in — not one shared ref for the whole section). **Animation direction is tied to on-screen position, not a fixed left/right per element type**: whichever block (text or visual) renders on the left uses `slideInLeftVariants`, whichever renders on the right uses the new `slideInRightVariants` — so for the reversed (visual-left/text-right) row, the visual slides from the left and the text from the right, mirroring each block's actual entry edge. Implemented by swapping which JSX block renders first (`reverse ? visual, text : text, visual`) rather than reordering via `lg:order-*` classes, so DOM order always matches visual order. **New `slideInRightVariants` added to `lib/animation-variants.ts`** (`x: 32 → 0`, mirrors the existing `slideInLeftVariants` exactly) — the spec calls for a right-fade-in that didn't have a matching variant yet.
+
+**Icon substitution**: the spec names `CheckCircle` for the bullet points — the installed `lucide-react` version has no icon by that name (confirmed via its own `.d.ts`); used `CircleCheck` instead, the closest equivalent actually exported. Same recurring substitution pattern as `FeaturesSection`'s `BarChart2` → `ChartColumn`.
+
+All three mockup visuals (match score card, resume card, company research card) reuse existing token pairings already established elsewhere in the registry — success-score card matches `MatchScore.tsx`'s pattern, the "Tailored" badge matches `CompanyResearch`'s status-badge precedent, skill badges reuse the project's standard `bg-success-lightest`/`text-success-foreground` pairing. No new color decisions were needed.
+
+### HowItWorksCta
+
+`components/landing/how-it-works/HowItWorksCta.tsx`
+
+`"use client"`. Identical structure/animation to `components/landing/CtaSection.tsx` (same outer `bg-background py-24` wrapper, same accent-card glow `boxShadow`, same `fadeUpVariants`/`useInView` pattern, same hover-scale wrapper around the `Link`) — only the heading/sub/button copy differ, per the spec's explicit "reuse the same CTA pattern" instruction. **CTA hardcodes `/login`**, matching `Navbar`/`Footer`'s existing unconditional behavior on this page — `/how-it-works` has no page-level auth redirect (unlike `app/page.tsx`, which redirects authenticated users to `/dashboard` before any component renders), so a real auth-aware href would only fix this one button while `Navbar`'s own CTA on the same page stays hardcoded to `/login` regardless of session state. Flagging this as a known gap against the spec's general "All CTAs → /login if unauthenticated, /dashboard if authenticated" policy line — revisit if/when `Navbar` itself gets auth-aware CTA logic, at which point this button should follow the same fix.
 
 ### `app/find-jobs/[id]/page.tsx`
 
