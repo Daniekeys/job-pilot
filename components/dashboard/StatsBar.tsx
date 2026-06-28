@@ -1,21 +1,13 @@
-type Stat = {
-  label: string;
-  value: string;
-  trend?: string;
-  caption: string;
+import type { DashboardStat } from "@/lib/dashboard-stats";
+
+type Props = {
+  stats: DashboardStat[];
 };
 
-const STATS: Stat[] = [
-  { label: "Total Jobs Found", value: "284", trend: "+12%", caption: "vs last week" },
-  { label: "Avg. Match Rate", value: "82%", trend: "+3%", caption: "vs last week" },
-  { label: "Companies Researched", value: "35", caption: "Total researched" },
-  { label: "Jobs This Week", value: "28", caption: "New this week" },
-];
-
-export function StatsBar() {
+export function StatsBar({ stats }: Props) {
   return (
     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-      {STATS.map((stat) => (
+      {stats.map((stat) => (
         <div
           key={stat.label}
           className="rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]"

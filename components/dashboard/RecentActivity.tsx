@@ -1,50 +1,44 @@
-type DotColor = "accent" | "info" | "success";
+import type { ActivityDot, ActivityItem } from "@/lib/recent-activity";
 
-type Activity = {
-  text: string;
-  timestamp: string;
-  dot: DotColor;
+type Props = {
+  activities: ActivityItem[];
 };
 
-const ACTIVITIES: Activity[] = [
-  { text: "Found 8 jobs for Frontend Engineer", timestamp: "10 mins ago", dot: "accent" },
-  { text: "Researched Stripe", timestamp: "1 hour ago", dot: "info" },
-  { text: "Found 12 jobs for React Developer", timestamp: "2 hours ago", dot: "success" },
-  { text: "Researched Vercel", timestamp: "Yesterday", dot: "accent" },
-  { text: "Found 10 jobs for Full Stack Engineer", timestamp: "Yesterday", dot: "success" },
-];
-
-const DOT_RING_CLASS: Record<DotColor, string> = {
-  accent: "bg-accent-light",
+const DOT_RING_CLASS: Record<ActivityDot, string> = {
   info: "bg-info-light",
   success: "bg-success-light",
 };
 
-const DOT_INNER_CLASS: Record<DotColor, string> = {
-  accent: "bg-accent",
+const DOT_INNER_CLASS: Record<ActivityDot, string> = {
   info: "bg-info",
   success: "bg-success-alt",
 };
 
-export function RecentActivity() {
+export function RecentActivity({ activities }: Props) {
   return (
     <div className="rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]">
       <h2 className="text-base font-semibold text-text-primary">Recent Activity</h2>
-      <ul className="mt-4 divide-y divide-border">
-        {ACTIVITIES.map((activity, index) => (
-          <li key={index} className="flex items-start gap-3 py-3 first:pt-4">
-            <span
-              className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full ${DOT_RING_CLASS[activity.dot]}`}
-            >
-              <span className={`size-2 rounded-full ${DOT_INNER_CLASS[activity.dot]}`} />
-            </span>
-            <div>
-              <p className="text-sm font-medium text-text-primary">{activity.text}</p>
-              <p className="text-xs text-text-muted">{activity.timestamp}</p>
-            </div>
-          </li>
-        ))}
-      </ul>
+      {activities.length === 0 ? (
+        <p className="mt-4 py-6 text-center text-sm text-text-muted">
+          No activity yet — search for jobs to get started.
+        </p>
+      ) : (
+        <ul className="mt-4 divide-y divide-border">
+          {activities.map((activity) => (
+            <li key={activity.id} className="flex items-start gap-3 py-3 first:pt-4">
+              <span
+                className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full ${DOT_RING_CLASS[activity.dot]}`}
+              >
+                <span className={`size-2 rounded-full ${DOT_INNER_CLASS[activity.dot]}`} />
+              </span>
+              <div>
+                <p className="text-sm font-medium text-text-primary">{activity.text}</p>
+                <p className="text-xs text-text-muted">{activity.timestamp}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
