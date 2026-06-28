@@ -348,6 +348,40 @@ All three mockup visuals (match score card, resume card, company research card) 
 
 `"use client"`. Identical structure/animation to `components/landing/CtaSection.tsx` (same outer `bg-background py-24` wrapper, same accent-card glow `boxShadow`, same `fadeUpVariants`/`useInView` pattern, same hover-scale wrapper around the `Link`) — only the heading/sub/button copy differ, per the spec's explicit "reuse the same CTA pattern" instruction. **CTA hardcodes `/login`**, matching `Navbar`/`Footer`'s existing unconditional behavior on this page — `/how-it-works` has no page-level auth redirect (unlike `app/page.tsx`, which redirects authenticated users to `/dashboard` before any component renders), so a real auth-aware href would only fix this one button while `Navbar`'s own CTA on the same page stays hardcoded to `/login` regardless of session state. Flagging this as a known gap against the spec's general "All CTAs → /login if unauthenticated, /dashboard if authenticated" policy line — revisit if/when `Navbar` itself gets auth-aware CTA logic, at which point this button should follow the same fix.
 
+## Pricing Page (`/pricing`) - Built per `context/pricing-spec.md`
+
+New `app/pricing/page.tsx` plus `components/landing/pricing/{PricingHeader,PricingCards,FeatureTable,FaqSection,PricingCta}.tsx`, reusing `components/landing/{Navbar,Footer}.tsx`. Mock data only. `app/pricing/page.tsx` is intentionally `"use client"` because billing state is shared between `PricingHeader` and `PricingCards`.
+
+### PricingHeader
+
+`components/landing/pricing/PricingHeader.tsx`
+
+`"use client"`. Header shell: `bg-background pt-32 pb-12 text-center`. Eyebrow: `bg-accent-muted text-accent rounded-full px-3 py-1 text-sm font-medium`. Headline/subcopy: `text-4xl md:text-5xl font-bold text-text-primary` and `text-lg text-text-secondary`. Billing toggle shell: `bg-surface-secondary border border-border rounded-full p-1 inline-flex`; active option uses `bg-surface font-medium text-text-primary shadow-sm`, inactive uses `text-text-muted`. Annual-only badge: `bg-success-lightest text-success-foreground rounded-full px-2 py-0.5 text-xs font-medium`.
+
+### PricingCards
+
+`components/landing/pricing/PricingCards.tsx`
+
+`"use client"`. Props: `billing: "monthly" | "annual"`. Three-card grid: `mx-auto max-w-5xl px-6 py-8`, `grid grid-cols-1 md:grid-cols-3 gap-6`. Animation uses `scaleInVariants` + `staggerContainerVariants`, with `staggerChildren: 0.12` and reduced-motion final state. Free/Team shell: `rounded-2xl border border-border bg-surface p-8`. Pro shell: `relative rounded-2xl bg-accent p-8 shadow-2xl shadow-accent/20 ring-2 ring-accent`; badge `absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-dark px-4 py-1.5 text-xs font-bold text-accent-foreground`. Free/Pro CTAs go to `/login`; Team CTA goes to `mailto:hello@jobpilot.app`.
+
+### FeatureTable
+
+`components/landing/pricing/FeatureTable.tsx`
+
+`"use client"`. Section: `bg-surface px-6 py-20`; inner `mx-auto max-w-5xl`; heading `mb-8 text-2xl font-bold text-text-primary`. Table wrapper: `overflow-x-auto rounded-xl border border-border`. Header: `sticky top-0 bg-surface-tertiary`; columns `text-sm font-semibold uppercase tracking-wide`, Pro emphasized with `text-accent font-bold`. Rows alternate `bg-surface` / `bg-surface-secondary`. Boolean values render lucide `Check` in `text-success` or `X` in `text-text-muted`.
+
+### FaqSection
+
+`components/landing/pricing/FaqSection.tsx`
+
+`"use client"`. Local accordion matching the requested shadcn-style classes: wrapper `overflow-hidden rounded-xl border border-border`, items `border-b border-border last:border-0`, trigger `flex w-full items-center justify-between px-6 py-4 text-left font-medium text-text-primary`, content `px-6 pb-4 text-sm text-text-secondary`, icon `ChevronDown` rotates with `rotate-180`. The repo has no existing shadcn Accordion primitive and no Radix accordion dependency, so this stays local instead of adding an unapproved package.
+
+### PricingCta
+
+`components/landing/pricing/PricingCta.tsx`
+
+`"use client"`. CTA pattern: `bg-background px-6 py-20`, inner `mx-auto max-w-4xl rounded-3xl bg-accent p-12 text-center`, heading `text-4xl font-bold text-accent-foreground`, subcopy `text-accent-foreground/70`, button `inline-flex h-12 items-center justify-center rounded-md bg-surface px-8 font-semibold text-accent hover:bg-surface/90`. Uses `fadeUpVariants` and disables hover-scale under reduced motion.
+
 ### `app/find-jobs/[id]/page.tsx`
 
 Async Server Component. `params` is awaited as `Promise<{ id: string }>` (confirmed against the installed Next.js 16 docs in `node_modules/next/dist/docs`, same pattern as `app/find-jobs/page.tsx`'s `searchParams`). Auth-redirects to `/login` if no user; queries `jobs` scoped to **both** `id` and `user_id` (never `id` alone, even though it's already a unique key — code-standards.md's "always scope to user" invariant applies so one user can never view another's job by guessing a UUID) via `.single()`, and calls `notFound()` if the row doesn't exist or doesn't belong to the current user. "Back to Jobs" is a plain `next/link` with a `ChevronLeft` icon, `text-text-secondary hover:text-text-primary` — not its own component, same precedent as other one-off navigational links in this codebase.
